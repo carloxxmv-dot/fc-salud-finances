@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>FCSALUD · Control diario</title>
+  <meta name="description" content="Registro diario de cobros por TPV, efectivo y gastos de la Clínica FC Salud.">
+  <meta name="theme-color" content="#a5b2a9">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="FCSALUD">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/favicon.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Georama:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="appbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><img src="icons/mark-white.png" alt=""></span>
+      <div class="brand-text">
+        <strong>FCSALUD</strong>
+        <button class="project-btn" id="projectBtn" aria-label="Cambiar proyecto"><span id="projectName">Clínica FC Salud</span> <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
+      </div>
+    </div>
+    <button class="icon-btn" id="installBtn" hidden aria-label="Instalar app">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg>
+    </button>
+  </header>
+
+  <main id="main">
+    <!-- HOY -->
+    <section class="view active" id="view-hoy" aria-label="Hoy">
+      <div class="day-nav">
+        <button class="round-btn" id="dayPrev" aria-label="Día anterior"><svg viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></svg></button>
+        <label class="day-label">
+          <small id="dayEyebrow">HOY</small>
+          <span id="dayTitle">—</span>
+          <input type="date" id="dayInput" aria-label="Elegir fecha">
+        </label>
+        <button class="round-btn" id="dayNext" aria-label="Día siguiente"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
+      </div>
+
+      <article class="hero">
+        <span class="hero-label">Balance del día</span>
+        <strong class="hero-amount" id="dayBalance">0,00 €</strong>
+        <div class="hero-split">
+          <span><i class="dot dot-in"></i>Ingresos <b id="dayIncome">0,00 €</b></span>
+          <span><i class="dot dot-out"></i>Gastos <b id="dayExpense">0,00 €</b></span>
+        </div>
+        <img class="hero-mark" src="icons/mark-white.png" alt="">
+      </article>
+
+      <h2 class="section-title">Registrar</h2>
+      <div class="quick">
+        <button class="quick-tile t-tpv" data-add="tpv">
+          <span class="q-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18M7 15h3"/></svg></span>
+          <strong>TPV</strong><small id="qTpv">0,00 €</small>
+        </button>
+        <button class="quick-tile t-cash" data-add="cash">
+          <span class="q-icon"><svg viewBox="0 0 24 24"><path d="M17 7.5A6 6 0 1 0 17 16.5M5 10.5h8M5 13.5h8"/></svg></span>
+          <strong>Efectivo</strong><small id="qCash">0,00 €</small>
+        </button>
+        <button class="quick-tile t-expense" data-add="expense">
+          <span class="q-icon"><svg viewBox="0 0 24 24"><path d="M4 8h3l1.5-2.5h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg></span>
+          <strong>Gasto</strong><small id="qExpense">0,00 €</small>
+        </button>
+      </div>
+
+      <div class="section-row">
+        <h2 class="section-title">Movimientos del día</h2>
+        <span class="count" id="dayCount">0</span>
+      </div>
+      <div class="list" id="dayList"></div>
+    </section>
+
+    <!-- HISTORIAL -->
+    <section class="view" id="view-historial" aria-label="Historial">
+      <div class="month-nav">
+        <button class="round-btn" data-month="-1" aria-label="Mes anterior"><svg viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></svg></button>
+        <h1 class="month-title" id="histMonth">—</h1>
+        <button class="round-btn" data-month="1" aria-label="Mes siguiente"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
+      </div>
+      <label class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+        <input id="search" type="search" placeholder="Buscar nota o proveedor" autocomplete="off">
+      </label>
+      <div class="chips" id="histChips" role="tablist">
+        <button class="chip on" data-f="all">Todos</button>
+        <button class="chip c-tpv" data-f="tpv">TPV</button>
+        <button class="chip c-cash" data-f="cash">Efectivo</button>
+        <button class="chip c-expense" data-f="expense">Gastos</button>
+        <button class="chip c-physio" data-f="Fisioterapia">Fisioterapia</button>
+        <button class="chip c-podo" data-f="Podología">Podología</button>
+      </div>
+      <div class="hist-sum" id="histSum"></div>
+      <div id="histList"></div>
+    </section>
+
+    <!-- RESUMEN -->
+    <section class="view" id="view-resumen" aria-label="Resumen">
+      <div class="month-nav">
+        <button class="round-btn" data-month="-1" aria-label="Mes anterior"><svg viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></svg></button>
+        <h1 class="month-title" id="sumMonth">—</h1>
+        <button class="round-btn" data-month="1" aria-label="Mes siguiente"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
+      </div>
+      <article class="hero hero-month">
+        <span class="hero-label">Balance del mes</span>
+        <strong class="hero-amount" id="mBalance">0,00 €</strong>
+        <div class="hero-split">
+          <span><i class="dot dot-in"></i>Ingresos <b id="mIncome">0,00 €</b></span>
+          <span><i class="dot dot-out"></i>Gastos <b id="mExpense">0,00 €</b></span>
+        </div>
+        <img class="hero-mark" src="icons/mark-white.png" alt="">
+      </article>
+
+      <div class="stat-grid">
+        <div class="stat s-tpv"><span>TPV</span><strong id="mTpv">0,00 €</strong></div>
+        <div class="stat s-cash"><span>Efectivo</span><strong id="mCash">0,00 €</strong></div>
+        <div class="stat s-physio"><span>Fisioterapia</span><strong id="mPhysio">0,00 €</strong></div>
+        <div class="stat s-podo"><span>Podología</span><strong id="mPodo">0,00 €</strong></div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">Ingresos por área</h2>
+        <div class="split-bar" id="areaBar"><i class="sb-physio"></i><i class="sb-podo"></i></div>
+        <div class="split-legend" id="areaLegend"></div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">Día a día</h2>
+        <div class="chart" id="dayChart"></div>
+        <div class="split-legend"><span><i class="dot dot-in"></i>Ingresos</span><span><i class="dot dot-out"></i>Gastos</span></div>
+      </div>
+
+      <div class="export">
+        <button class="btn btn-primary btn-block" id="pdfBtn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg>
+          Descargar PDF para la asesoría
+        </button>
+        <button class="btn btn-soft btn-block" id="shareBtn" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="17" cy="6" r="2.5"/><circle cx="7" cy="12" r="2.5"/><circle cx="17" cy="18" r="2.5"/><path d="m9.2 10.8 5.6-3.4m-5.6 5.8 5.6 3.4"/></svg>
+          Enviar PDF
+        </button>
+      </div>
+    </section>
+
+    <!-- AJUSTES -->
+    <section class="view" id="view-ajustes" aria-label="Ajustes">
+      <h1 class="page-title">Ajustes</h1>
+
+      <div class="card">
+        <h2 class="card-title">Proyecto activo</h2>
+        <p class="muted">Cada proyecto guarda sus propios movimientos.</p>
+        <div class="project-list" id="projectList"></div>
+        <button class="btn btn-soft btn-block" id="newProjectBtn">＋ Crear proyecto</button>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">Área preseleccionada</h2>
+        <p class="muted">Se recuerda la última que usaste al registrar.</p>
+        <div class="segmented" id="defaultArea">
+          <button data-v="Fisioterapia" class="seg-physio">Fisioterapia</button>
+          <button data-v="Podología" class="seg-podo">Podología</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">Copia de seguridad</h2>
+        <p class="muted">Los datos se guardan solo en este dispositivo. Haz una copia de vez en cuando.</p>
+        <div class="btn-row">
+          <button class="btn btn-soft" id="exportBtn">Exportar copia</button>
+          <label class="btn btn-soft">Importar copia<input type="file" id="importInput" accept="application/json" hidden></label>
+        </div>
+      </div>
+
+      <div class="card" id="installCard">
+        <h2 class="card-title">Instalar en el móvil</h2>
+        <p class="muted" id="installHelp">En iPhone: pulsa <b>Compartir</b> y después <b>Añadir a pantalla de inicio</b>. En Android: menú ⋮ y <b>Instalar aplicación</b>.</p>
+        <button class="btn btn-primary btn-block" id="installBtn2" hidden>Instalar FCSALUD</button>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">Privacidad</h2>
+        <p class="muted">La lectura de facturas se hace dentro del propio móvil: las fotos y PDF no se envían a ningún servidor. Los cálculos son orientativos y no sustituyen la revisión de la asesoría.</p>
+        <button class="btn btn-danger-soft btn-block" id="wipeBtn">Borrar todos los datos</button>
+      </div>
+      <p class="version">FCSALUD · Control diario · v1.0</p>
+    </section>
+  </main>
+
+  <nav class="tabbar" aria-label="Navegación">
+    <button class="tab active" data-view="hoy"><svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20h-5.5v-5h-5v5H4z"/></svg><span>Hoy</span></button>
+    <button class="tab" data-view="historial"><svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h9"/></svg><span>Historial</span></button>
+    <button class="fab" id="fab" aria-label="Nuevo movimiento"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+    <button class="tab" data-view="resumen"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg><span>Resumen</span></button>
+    <button class="tab" data-view="ajustes"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></svg><span>Ajustes</span></button>
+  </nav>
+
+  <!-- HOJA: NUEVO / EDITAR MOVIMIENTO -->
+  <div class="sheet-wrap" id="addSheet" aria-hidden="true">
+    <div class="scrim" data-close></div>
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="addTitle">
+      <div class="grabber"></div>
+      <header class="sheet-head">
+        <h2 id="addTitle">Nuevo movimiento</h2>
+        <button class="icon-btn" data-close aria-label="Cerrar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </header>
+
+      <div class="type-seg" id="typeSeg">
+        <button data-type="tpv" class="ts-tpv">TPV</button>
+        <button data-type="cash" class="ts-cash">Efectivo</button>
+        <button data-type="expense" class="ts-expense">Gasto</button>
+      </div>
+
+      <div class="segmented area-seg" id="areaSeg">
+        <button data-v="Fisioterapia" class="seg-physio">Fisioterapia</button>
+        <button data-v="Podología" class="seg-podo">Podología</button>
+      </div>
+
+      <div class="expense-only" id="docBox">
+        <div class="doc-actions" id="docActions">
+          <label class="doc-btn">
+            <svg viewBox="0 0 24 24"><path d="M4 8h3l1.5-2.5h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg>
+            <span><strong>Hacer foto</strong><small>Leemos el importe</small></span>
+            <input type="file" accept="image/*" capture="environment" id="camInput" hidden>
+          </label>
+          <label class="doc-btn">
+            <svg viewBox="0 0 24 24"><path d="M7 3.5h7l4 4V20.5H7z"/><path d="M14 3.5V8h4"/></svg>
+            <span><strong>Subir archivo</strong><small>PDF o imagen</small></span>
+            <input type="file" accept="application/pdf,image/*" id="fileInput" hidden>
+          </label>
+        </div>
+        <div class="doc-attached" id="docAttached" hidden>
+          <button class="doc-thumb" id="docThumb" aria-label="Ver documento"></button>
+          <div><strong id="docName">documento</strong><small id="docHint">Revisa los datos leídos</small></div>
+          <button class="icon-btn" id="docRemove" aria-label="Quitar documento"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+        </div>
+        <label class="field">
+          <span>Proveedor o servicio</span>
+          <input id="partyInput" placeholder="Ej. Material sanitario" autocomplete="off" list="partyList">
+          <datalist id="partyList"></datalist>
+        </label>
+      </div>
+
+      <label class="amount-field">
+        <span id="amountLabel">Importe cobrado</span>
+        <div class="amount-box"><input id="amountInput" inputmode="decimal" placeholder="0,00" autocomplete="off" enterkeyhint="done"><b>€</b></div>
+      </label>
+      <div class="presets" id="presets"></div>
+
+      <div class="field-row">
+        <label class="field income-only"><span>Nota (opcional)</span><input id="noteInput" placeholder="Ej. Sesiones de mañana" autocomplete="off"></label>
+        <label class="field field-date"><span>Fecha</span><input id="dateInput" type="date"></label>
+      </div>
+
+      <p class="form-error" id="formError" role="alert"></p>
+      <button class="btn btn-primary btn-block btn-lg" id="saveBtn">Guardar</button>
+    </section>
+  </div>
+
+  <!-- HOJA: DETALLE -->
+  <div class="sheet-wrap" id="detailSheet" aria-hidden="true">
+    <div class="scrim" data-close></div>
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="detAmount">
+      <div class="grabber"></div>
+      <header class="sheet-head">
+        <div class="badges" id="detBadges"></div>
+        <button class="icon-btn" data-close aria-label="Cerrar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </header>
+      <strong class="det-amount" id="detAmount">0,00 €</strong>
+      <p class="det-desc" id="detDesc"></p>
+      <p class="muted" id="detDate"></p>
+      <div id="detDoc"></div>
+      <div class="btn-row">
+        <button class="btn btn-soft" id="detEdit">Editar</button>
+        <button class="btn btn-danger-soft" id="detDelete">Eliminar</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- HOJA: PROYECTO -->
+  <div class="sheet-wrap" id="projectSheet" aria-hidden="true">
+    <div class="scrim" data-close></div>
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="projTitle">
+      <div class="grabber"></div>
+      <header class="sheet-head">
+        <h2 id="projTitle">Proyectos</h2>
+        <button class="icon-btn" data-close aria-label="Cerrar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </header>
+      <div class="project-list" id="projectList2"></div>
+      <label class="field"><span>Nuevo proyecto</span><input id="projectInput" placeholder="Ej. Reforma del local" maxlength="60"></label>
+      <button class="btn btn-primary btn-block" id="projectCreate">Crear y usar</button>
+    </section>
+  </div>
+
+  <!-- LECTURA OCR -->
+  <div class="ocr" id="ocr" aria-live="polite" hidden>
+    <div class="ocr-card">
+      <div class="ocr-ring"><img src="icons/mark-white.png" alt=""></div>
+      <h2>Leyendo el gasto</h2>
+      <p id="ocrMsg">Buscando proveedor e importe…</p>
+      <div class="bar"><i id="ocrBar"></i></div>
+      <button class="btn btn-ghost" id="ocrCancel">Rellenar a mano</button>
+    </div>
+  </div>
+
+  <!-- VISOR DOCUMENTO -->
+  <div class="viewer" id="viewer" hidden>
+    <header><strong id="viewerTitle">Documento</strong><a id="viewerDownload" class="icon-btn light" aria-label="Descargar"><svg viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg></a><button class="icon-btn light" id="viewerClose" aria-label="Cerrar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header>
+    <div class="viewer-body" id="viewerBody"></div>
+  </div>
+
+  <div class="toast" id="toast" role="status"><span id="toastText"></span><button id="toastAction" hidden>Deshacer</button></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
