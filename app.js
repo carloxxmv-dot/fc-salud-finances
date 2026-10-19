@@ -1038,7 +1038,7 @@ $('#logoutBtn').onclick = async () => {
 $('#pwBtn').onclick = () => { $('#pwCurrent').value = ''; $('#pwNext').value = ''; $('#pwError').textContent = ''; showSheet('pwSheet'); };
 $('#pwSave').onclick = async () => {
   const current = $('#pwCurrent').value, next = $('#pwNext').value;
-  if (next.length < 6) { $('#pwError').textContent = 'La nueva contraseña debe tener al menos 6 caracteres'; return; }
+  if (next.length < 4) { $('#pwError').textContent = 'La nueva contraseña debe tener al menos 4 caracteres'; return; }
   try {
     const r = await fetch('/api/password', { method: 'POST', body: JSON.stringify({ current, next }), headers: { 'content-type': 'application/json' }, credentials: 'same-origin' });
     if (r.ok) { closeTop(); toast('✓ Contraseña cambiada'); }

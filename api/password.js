@@ -6,7 +6,7 @@ export async function POST(request) {
   let body = {};
   try { body = await request.json(); } catch {}
   const next = String(body.next || '');
-  if (next.length < 6) return json({ error: 'short' }, 400);
+  if (next.length < 4) return json({ error: 'short' }, 400);
   if (!(await checkPassword(String(body.current || '')))) { await wait(700); return json({ error: 'password' }, 403); }
   await setPassword(next);
   return json({ ok: true });
