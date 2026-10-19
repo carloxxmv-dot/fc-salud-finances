@@ -14,7 +14,12 @@ App web instalable para el control diario de la Clínica FC Salud, creada a part
 - Editar, eliminar con "Deshacer", cerrar hojas deslizando hacia abajo o con el botón Atrás de Android.
 
 ## Datos
-Se guardan en el propio dispositivo (IndexedDB), así que **no se pierden al recargar**, pero tampoco se sincronizan entre móviles. Usa "Exportar copia" de vez en cuando.
+Todo (movimientos, proyectos y facturas) se guarda en un almacén **privado de Vercel Blob**, protegido con contraseña. Cada móvil guarda además una copia local (IndexedDB) para funcionar sin conexión, y sincroniza los cambios en cuanto hay internet.
+
+- Variables de entorno en Vercel: `APP_PASSWORD` (contraseña inicial), `SESSION_SECRET` (firma de la sesión) y `BLOB_READ_WRITE_TOKEN` (la crea Vercel al conectar el almacén).
+- La contraseña se puede cambiar desde Ajustes; entonces se guarda cifrada (scrypt) en `config/auth.json` y `APP_PASSWORD` deja de usarse.
+- Funciones en `/api`: `login`, `password`, `data` (un único `data/fcsalud.json`) y `doc` (facturas en `docs/{id}`, máx. 4 MB). Las fotos se comprimen en el móvil antes de subirlas.
+- Para probar en local sin Vercel: `FC_LOCAL_STORE=./store` guarda en una carpeta.
 
 ## Cómo probarla
 Sirve esta carpeta con un servidor web, por ejemplo:
@@ -27,4 +32,4 @@ y abre http://localhost:8080. Para **instalarla en el móvil** tiene que estar p
 La app funciona sin conexión una vez abierta. La tipografía Georama, la lectura de facturas y la generación del PDF se descargan de internet la primera vez que se usan y quedan guardadas.
 
 ## Archivos
-`index.html`, `styles.css`, `app.js`, `sw.js` (modo sin conexión), `manifest.webmanifest` e `icons/` (generados desde el logotipo).
+`index.html`, `styles.css`, `app.js`, `sw.js` (modo sin conexión), `manifest.webmanifest` e `icons/` (generados desde el logotipo)., `api/` (servidor en Vercel) y `package.json`.

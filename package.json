@@ -1,0 +1,10 @@
+{
+  "name": "fc-salud-finances",
+  "private": true,
+  "type": "module",
+  "description": "FCSALUD · Control diario: app móvil (PWA) con guardado en Vercel Blob",
+  "dependencies": {
+    "@vercel/blob": "^2.8.2"
+  },
+  "engines": { "node": ">=20" }
+}

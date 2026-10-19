@@ -85,7 +85,8 @@ const db = {
   get(store, id) { return this.tx(store, 'readonly', s => s.get(id)); },
   put(store, v) { return this.tx(store, 'readwrite', s => s.put(v)); },
   del(store, id) { return this.tx(store, 'readwrite', s => s.delete(id)); },
-  clear(store) { return this.tx(store, 'readwrite', s => s.clear()); }
+  clear(store) { return this.tx(store, 'readwrite', s => s.clear()); },
+  putMany(store, list) { return this.tx(store, 'readwrite', s => { list.forEach(v => s.put(v)); }); }
 };
 // Si IndexedDB no está disponible (modo privado antiguo), se trabaja en memoria.
 const memory = { moves: new Map(), docs: new Map() };
@@ -95,7 +96,8 @@ const store = {
   get: (s, id) => useMemory ? Promise.resolve(memory[s].get(id)) : db.get(s, id),
   put: (s, v) => useMemory ? (memory[s].set(v.id, v), Promise.resolve()) : db.put(s, v),
   del: (s, id) => useMemory ? (memory[s].delete(id), Promise.resolve()) : db.del(s, id),
-  clear: s => useMemory ? (memory[s].clear(), Promise.resolve()) : db.clear(s)
+  clear: s => useMemory ? (memory[s].clear(), Promise.resolve()) : db.clear(s),
+  putMany: (s, list) => useMemory ? (list.forEach(v => memory[s].set(v.id, v)), Promise.resolve()) : db.putMany(s, list)
 };
 
 /* ---------- Estado ---------- */
@@ -441,7 +443,7 @@ function openAdd(type = 'tpv', move = null, swapFrom = null) {
   $('#dateInput').value = move ? move.date : state.day;
   $('#docHint').textContent = 'Toca para verlo';
   showDoc(null);
-  if (form.docId) store.get('docs', form.docId).then(d => d && showDoc(d));
+  if (form.docId) getDoc(form.docId).then(d => d && showDoc(d));
   updateSaveLabel();
   if (swapFrom) swapSheet(swapFrom, 'addSheet'); else showSheet('addSheet');
   // En ingresos se enfoca el importe directamente.
@@ -457,7 +459,7 @@ $('#amountInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.
 $('#docRemove').onclick = () => { form.doc = null; form.removeDoc = true; showDoc(null); };
 $('#docThumb').onclick = () => {
   if (form.doc) openViewer(form.doc);
-  else if (form.docId) store.get('docs', form.docId).then(d => d && openViewer(d));
+  else if (form.docId) getDoc(form.docId).then(d => d && openViewer(d));
 };
 
 async function saveMove() {
@@ -480,11 +482,13 @@ async function saveMove() {
     if (form.doc) {
       const docId = form.docId && !form.removeDoc ? form.docId : uid();
       await store.put('docs', { id: docId, blob: form.doc.blob, name: form.doc.name, type: form.doc.type, uploadedAt: Date.now() });
+      cloud.mark('docs', docId);
       m.docId = docId; m.docAt = Date.now(); m.file = { name: form.doc.name, type: form.doc.type };
     } else if (form.docId && !form.removeDoc) { m.docId = form.docId; m.docAt = prev?.docAt; m.file = prev?.file; }
   }
-  if (prev?.docId && (form.removeDoc || form.type !== 'expense') && prev.docId !== m.docId) await store.del('docs', prev.docId);
+  if (prev?.docId && (form.removeDoc || form.type !== 'expense') && prev.docId !== m.docId) { await store.del('docs', prev.docId); cloud.mark('docDel', prev.docId); }
   await store.put('moves', m);
+  cloud.mark('up', m.id);
   const i = moves.findIndex(x => x.id === m.id);
   if (i >= 0) moves[i] = m; else moves.push(m);
   if (!prev) { state.day = m.date; settings.lastType = m.type; settings.area = m.service; saveSettings(); }
@@ -508,7 +512,7 @@ function openDetail(id) {
   $('#detDate').textContent = dayLabel(m.date) + (settings.projects.length > 1 ? ' · ' + (m.project || 'Clínica FC Salud') : '');
   $('#detDoc').innerHTML = m.docPurged && !m.docId ? `<p class="muted">El justificante (${esc(m.file?.name || 'archivo')}) se borró automáticamente a los 4 meses de subirlo.</p>` : m.docId ? `<button class="det-doc" id="detDocBtn"><span class="doc-thumb">${ICONS.doc}</span><div><strong>${esc(m.file?.name || 'Justificante')}</strong><small>Ver o descargar justificante</small></div></button>` : '';
   if (m.docId) {
-    store.get('docs', m.docId).then(d => {
+    getDoc(m.docId).then(d => {
       if (!d) return;
       const th = $('#detDocBtn .doc-thumb');
       if (th && (d.type || '').startsWith('image/')) { const u = URL.createObjectURL(d.blob); th.style.backgroundImage = `url("${u}")`; th.innerHTML = ''; }
@@ -527,10 +531,13 @@ $('#detDelete').onclick = async () => {
   const doc = m.docId ? await store.get('docs', m.docId) : null;
   await store.del('moves', m.id);
   if (doc) await store.del('docs', doc.id);
+  cloud.mark('del', m.id);
   moves = moves.filter(x => x.id !== m.id);
   closeTop(); render(); vibrate(15);
   toast('Movimiento eliminado', async () => {
-    await store.put('moves', m); if (doc) await store.put('docs', doc);
+    m.updatedAt = Date.now();
+    await store.put('moves', m); if (doc) { await store.put('docs', doc); cloud.mark('docs', doc.id); }
+    cloud.unmark('del', m.id); cloud.mark('up', m.id);
     moves.push(m); render();
   });
 };
@@ -626,8 +633,20 @@ async function readDocument(file) {
 }
 $('#ocrCancel').onclick = () => { ocrCancelled = true; if (ocrWorker) ocrWorker.terminate().catch(() => {}); $('#ocr').hidden = true; };
 
+// Las fotos se guardan reducidas (unos cientos de KB) para no gastar espacio.
+async function compressImage(file) {
+  if (!(file.type || '').startsWith('image/') || (file.size < 700 * 1024 && /jpe?g|png|webp/.test(file.type))) return file;
+  try {
+    const c = await shrinkImage(file, 2000);
+    const b = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.82));
+    if (!b || b.size >= file.size) return file;
+    return new File([b], (file.name || 'foto').replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } catch (e) { return file; }
+}
 async function attachFile(file) {
   if (!file) return;
+  file = await compressImage(file);
+  if (file.size > 4 * 1024 * 1024 && cloud.enabled) toast('Este archivo pesa más de 4 MB: se guardará solo en este móvil');
   form.doc = { blob: file, name: file.name || 'foto.jpg', type: file.type };
   form.removeDoc = false;
   showDoc(form.doc);
@@ -720,7 +739,7 @@ async function appendInvoices(reportBytes, list) {
   };
   const fit = (w, h) => { const k = Math.min((W - 2 * M) / w, (H - HEAD - 2 * M) / h, 1.5); return { width: w * k, height: h * k, x: (W - w * k) / 2, y: (H - HEAD - M) - h * k }; };
   for (let i = 0; i < list.length; i++) {
-    const m = list[i], d = await store.get('docs', m.docId);
+    const m = list[i], d = await getDoc(m.docId);
     if (!d) continue;
     try {
       if (d.type === 'application/pdf' || /\.pdf$/i.test(d.name)) {
@@ -752,16 +771,17 @@ async function appendInvoices(reportBytes, list) {
 const KEEP_MONTHS = 4;
 const expiryOf = ts => { const d = new Date(ts); d.setMonth(d.getMonth() + KEEP_MONTHS); return d; };
 async function purgeOldDocs() {
-  const docs = await store.all('docs'), now = Date.now();
-  let n = 0;
-  for (const d of docs) {
-    const m = moves.find(x => x.docId === d.id);
-    const uploaded = d.uploadedAt || m?.docAt || m?.createdAt || now;
-    if (m && expiryOf(uploaded).getTime() > now) continue;
-    await store.del('docs', d.id);
-    if (m) { m.docId = null; m.docPurged = true; await store.put('moves', m); n++; }
+  const now = Date.now();
+  for (const m of moves) {
+    if (!m.docId || expiryOf(m.docAt || m.createdAt).getTime() > now) continue;
+    const id = m.docId;
+    await store.del('docs', id).catch(() => {});
+    m.docId = null; m.docPurged = true; m.updatedAt = now;
+    await store.put('moves', m);
+    cloud.mark('up', m.id); cloud.mark('docDel', id);
   }
-  return n;
+  // Copias locales de justificantes que ya no pertenecen a ningún movimiento.
+  for (const d of await store.all('docs')) if (!moves.some(m => m.docId === d.id)) await store.del('docs', d.id);
 }
 function renderPurgeNote(list) {
   const withDoc = list.filter(m => m.type === 'expense' && m.docId);
@@ -769,7 +789,7 @@ function renderPurgeNote(list) {
   if (!withDoc.length) { el.hidden = true; return; }
   const first = new Date(Math.min(...withDoc.map(m => expiryOf(m.docAt || m.createdAt).getTime())));
   el.hidden = false;
-  el.textContent = `El informe incluye ${withDoc.length} factura${withDoc.length > 1 ? 's' : ''}. Se borrarán del móvil a partir del ${first.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}: descarga el informe antes.`;
+  el.textContent = `El informe incluye ${withDoc.length} factura${withDoc.length > 1 ? 's' : ''}. Se borrarán a partir del ${first.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}: descarga el informe antes.`;
 }
 async function withBusy(btn, fn) {
   const html = btn.innerHTML; btn.disabled = true; btn.textContent = 'Preparando PDF…';
@@ -801,7 +821,7 @@ $('#newProjectBtn').onclick = $('#projectBtn').onclick;
 $('#projectCreate').onclick = () => {
   const name = $('#projectInput').value.trim();
   if (!name) { $('#projectInput').focus(); return; }
-  if (!settings.projects.some(p => p.toLowerCase() === name.toLowerCase())) settings.projects.push(name);
+  if (!settings.projects.some(p => p.toLowerCase() === name.toLowerCase())) { settings.projects.push(name); cloud.mark('projects', '1'); }
   closeTop(); useProject(settings.projects.find(p => p.toLowerCase() === name.toLowerCase()));
 };
 $('#projectInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('#projectCreate').click(); });
@@ -825,16 +845,212 @@ $('#importInput').onchange = async e => {
     if (p.app !== 'FCSALUD' || !Array.isArray(p.moves)) throw new Error('formato');
     if (!confirm(`¿Importar ${p.moves.length} movimientos? Se añadirán a los que ya tienes.`)) return;
     for (const d of p.docs || []) await store.put('docs', { id: d.id, name: d.name, type: d.type, blob: await (await fetch(d.data)).blob() });
-    for (const m of p.moves) await store.put('moves', m);
+    for (const m of p.moves) { await store.put('moves', m); cloud.mark('up', m.id); if (m.docId && (p.docs || []).some(d => d.id === m.docId)) cloud.mark('docs', m.docId); }
     (p.settings?.projects || []).forEach(pr => { if (!settings.projects.includes(pr)) settings.projects.push(pr); });
     saveSettings();
     moves = await store.all('moves'); render(); toast('✓ Copia importada');
   } catch (err) { toast('Ese archivo no es una copia de FCSALUD'); }
 };
 $('#wipeBtn').onclick = async () => {
-  if (!confirm('¿Borrar todos los movimientos y justificantes de este dispositivo? No se puede deshacer.')) return;
-  await store.clear('moves'); await store.clear('docs'); moves = []; render(); toast('Datos borrados');
+  const pend = cloud.pendingCount();
+  if (!confirm(cloud.authed
+    ? (pend ? `Hay ${pend} cambios sin subir que se perderán. ` : '') + '¿Vaciar este dispositivo? Los datos guardados en la nube no se tocan y se volverán a descargar.'
+    : '¿Borrar todos los movimientos y justificantes de este dispositivo? No se puede deshacer.')) return;
+  await cloud.clearLocal();
+  render(); toast('Dispositivo vaciado');
+  if (cloud.authed) cloud.syncNow();
 };
+
+/* ---------- Nube (Vercel Blob privado, con contraseña) ----------
+   El móvil guarda una copia local (funciona sin conexión) y los cambios se
+   suben agrupados. Al abrir la app se descargan los cambios de otros dispositivos. */
+async function getDoc(id) {
+  const local = await store.get('docs', id).catch(() => null);
+  if (local || !cloud.authed) return local || null;
+  try {
+    const r = await fetch('/api/doc?id=' + encodeURIComponent(id), { credentials: 'same-origin' });
+    if (!r.ok) return null;
+    const blob = await r.blob(), m = moves.find(x => x.docId === id);
+    const d = { id, blob, name: m?.file?.name || 'justificante', type: blob.type || m?.file?.type || '', uploadedAt: m?.docAt || Date.now() };
+    await store.put('docs', d);
+    return d;
+  } catch (e) { return null; }
+}
+const cloud = (() => {
+  const KEY = 'fcsalud:pending';
+  const enabled = /^https?:$/.test(location.protocol);
+  let pending = { up: new Set(), del: new Set(), docs: new Set(), docDel: new Set(), projects: new Set() };
+  try { const p = JSON.parse(localStorage.getItem(KEY) || '{}'); for (const k in pending) pending[k] = new Set(p[k] || []); } catch (e) {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(Object.entries(pending).map(([k, v]) => [k, [...v]])))); } catch (e) {} };
+  let timer = null, busy = false, again = false, status = 'idle';
+  const c = {
+    enabled, authed: false,
+    get lastSync() { return +(localStorage.getItem('fcsalud:lastSync') || 0); },
+    pendingCount: () => pending.up.size + pending.del.size + pending.docs.size + pending.docDel.size + pending.projects.size,
+    mark(kind, id) { pending[kind].add(id); if (kind === 'up') pending.del.delete(id); save(); c.schedule(); },
+    unmark(kind, id) { pending[kind].delete(id); save(); },
+    schedule(ms = 2000) { if (!enabled) return; clearTimeout(timer); timer = setTimeout(() => c.syncNow(), ms); ui(); },
+    async start() {
+      if (!enabled) return;
+      $('#syncBtn').hidden = false;
+      try {
+        const r = await fetch('/api/login', { credentials: 'same-origin', cache: 'no-store' });
+        if (r.status === 401) return showLogin();
+        if (!r.ok) throw new Error('server');
+        await c.loggedIn();
+      } catch (e) { status = 'offline'; ui(); }
+    },
+    async loggedIn() {
+      c.authed = true;
+      $('#login').hidden = true;
+      // Primera vez en este dispositivo: se suben los datos que ya tuviera.
+      if (!settings.cloudInit) {
+        for (const m of moves) { pending.up.add(m.id); if (m.docId) pending.docs.add(m.docId); }
+        pending.projects.add('1');
+        settings.cloudInit = true; saveSettings(); save();
+      }
+      await c.syncNow();
+    },
+    async syncNow() {
+      if (!enabled || !c.authed) { ui(); return; }
+      if (busy) { again = true; return; }
+      busy = true; status = 'busy'; ui();
+      try {
+        for (const id of [...pending.docs]) {
+          const d = await store.get('docs', id);
+          if (!d || !moves.some(m => m.docId === id)) { pending.docs.delete(id); save(); continue; }
+          if (d.blob.size > 4 * 1024 * 1024) { pending.docs.delete(id); save(); continue; }
+          const r = await fetch('/api/doc?id=' + encodeURIComponent(id), { method: 'PUT', body: d.blob, headers: { 'content-type': d.type || 'application/octet-stream' }, credentials: 'same-origin' });
+          if (r.status === 401) throw r;
+          if (r.status === 413 || r.status === 415) { pending.docs.delete(id); save(); continue; }
+          if (!r.ok) throw r;
+          pending.docs.delete(id); save();
+        }
+        const body = {
+          upsert: moves.filter(m => pending.up.has(m.id)),
+          delete: [...pending.del], deleteDocs: [...pending.docDel],
+          projects: pending.projects.size ? settings.projects : undefined
+        };
+        const changed = body.upsert.length || body.delete.length || body.deleteDocs.length || body.projects;
+        // Sin cambios propios solo se descarga (así se gastan menos operaciones del plan gratuito).
+        const r = changed
+          ? await fetch('/api/data', { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' }, credentials: 'same-origin' })
+          : await fetch('/api/data', { credentials: 'same-origin', cache: 'no-store' });
+        if (!r.ok) throw r;
+        const data = await r.json();
+        body.upsert.forEach(m => { const cur = moves.find(x => x.id === m.id); if (cur === m) pending.up.delete(m.id); });
+        body.delete.forEach(id => pending.del.delete(id));
+        body.deleteDocs.forEach(id => pending.docDel.delete(id));
+        if (body.projects) pending.projects.clear();
+        save();
+        await applyServer(data);
+        localStorage.setItem('fcsalud:lastSync', String(Date.now()));
+        status = 'ok';
+      } catch (e) {
+        if (e && e.status === 401) { c.authed = false; status = 'idle'; showLogin(); }
+        else status = navigator.onLine === false || e instanceof TypeError ? 'offline' : 'error';
+      } finally {
+        busy = false; ui();
+        if (again) { again = false; c.schedule(300); }
+      }
+    },
+    async clearLocal() {
+      await store.clear('moves'); await store.clear('docs'); moves = [];
+      for (const k in pending) pending[k].clear();
+      save();
+      if (!c.authed) { settings.cloudInit = false; saveSettings(); }
+    }
+  };
+  async function applyServer(data) {
+    const server = new Map((data.moves || []).map(m => [m.id, m]));
+    const local = new Map(moves.map(m => [m.id, m]));
+    const next = [];
+    for (const [id, m] of server) {
+      if (pending.del.has(id)) continue;
+      const l = local.get(id);
+      next.push(l && pending.up.has(id) && (l.updatedAt || 0) >= (m.updatedAt || 0) ? l : m);
+    }
+    for (const [id, l] of local) if (!server.has(id) && pending.up.has(id)) next.push(l);
+    const keep = new Set(next.map(m => m.id));
+    for (const m of moves) if (!keep.has(m.id)) { await store.del('moves', m.id); if (m.docId) await store.del('docs', m.docId).catch(() => {}); }
+    const changed = next.filter(m => local.get(m.id) !== m);
+    if (changed.length) await store.putMany('moves', changed);
+    moves = next;
+    let projChanged = false;
+    (data.projects || []).forEach(p => { if (!settings.projects.includes(p)) { settings.projects.push(p); projChanged = true; } });
+    if (projChanged) saveSettings();
+    render();
+  }
+  function ui() {
+    const b = $('#syncBtn'), n = c.pendingCount();
+    const st = !c.authed ? 'offline' : status === 'busy' ? 'busy' : status === 'offline' ? 'offline' : status === 'error' ? 'error' : n ? 'pending' : 'ok';
+    b.className = 'sync-btn ' + st;
+    const ago = c.lastSync ? relTime(c.lastSync) : null;
+    const text = !enabled ? 'La nube solo funciona con la app publicada.'
+      : !c.authed ? (status === 'offline' ? 'Sin conexión: trabajas con los datos de este móvil y se subirán al volver.' : 'Sin iniciar sesión.')
+      : status === 'busy' ? 'Sincronizando…'
+      : status === 'offline' ? `Sin conexión. ${n ? n + ' cambios se subirán al volver.' : 'Todo lo anterior está guardado.'}`
+      : status === 'error' ? `No se pudo sincronizar${n ? ` (${n} cambios pendientes)` : ''}. Se reintentará.`
+      : n ? `${n} cambios pendientes de subir.` : `Todo guardado en la nube${ago ? ' · ' + ago : ''}.`;
+    b.setAttribute('aria-label', text); b.title = text;
+    $('#cloudStatus').textContent = text;
+    $('#logoutBtn').hidden = !c.authed;
+    $('#pwBtn').disabled = !c.authed;
+  }
+  c.ui = ui;
+  return c;
+})();
+function relTime(ts) {
+  const s = Math.round((Date.now() - ts) / 1000);
+  if (s < 60) return 'ahora mismo';
+  if (s < 3600) return `hace ${Math.round(s / 60)} min`;
+  if (s < 86400) return `hace ${Math.round(s / 3600)} h`;
+  return new Date(ts).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+}
+function showLogin() {
+  $('#login').hidden = false;
+  $('#loginError').textContent = '';
+  setTimeout(() => $('#loginPw').focus(), 200);
+  cloud.ui();
+}
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const pw = $('#loginPw').value;
+  if (!pw) { $('#loginPw').focus(); return; }
+  const btn = $('#loginBtn'); btn.disabled = true; btn.textContent = 'Entrando…';
+  try {
+    const r = await fetch('/api/login', { method: 'POST', body: JSON.stringify({ password: pw }), headers: { 'content-type': 'application/json' }, credentials: 'same-origin' });
+    if (r.ok) { $('#loginPw').value = ''; await cloud.loggedIn(); toast('✓ Sesión iniciada'); }
+    else $('#loginError').textContent = 'Contraseña incorrecta';
+  } catch (err) { $('#loginError').textContent = 'Sin conexión. Inténtalo de nuevo.'; }
+  finally { btn.disabled = false; btn.textContent = 'Entrar'; }
+});
+$('#syncBtn').onclick = () => { go('ajustes'); cloud.syncNow(); };
+$('#syncNowBtn').onclick = () => cloud.authed ? cloud.syncNow() : showLogin();
+$('#logoutBtn').onclick = async () => {
+  const n = cloud.pendingCount();
+  if (!confirm((n ? `Hay ${n} cambios sin subir que se perderán. ` : '') + '¿Cerrar sesión? Se borrarán los datos de este dispositivo; en la nube siguen guardados.')) return;
+  try { await fetch('/api/login', { method: 'DELETE', credentials: 'same-origin' }); } catch (e) {}
+  cloud.authed = false;
+  await cloud.clearLocal();
+  render(); showLogin();
+};
+$('#pwBtn').onclick = () => { $('#pwCurrent').value = ''; $('#pwNext').value = ''; $('#pwError').textContent = ''; showSheet('pwSheet'); };
+$('#pwSave').onclick = async () => {
+  const current = $('#pwCurrent').value, next = $('#pwNext').value;
+  if (next.length < 6) { $('#pwError').textContent = 'La nueva contraseña debe tener al menos 6 caracteres'; return; }
+  try {
+    const r = await fetch('/api/password', { method: 'POST', body: JSON.stringify({ current, next }), headers: { 'content-type': 'application/json' }, credentials: 'same-origin' });
+    if (r.ok) { closeTop(); toast('✓ Contraseña cambiada'); }
+    else $('#pwError').textContent = r.status === 403 ? 'La contraseña actual no es correcta' : 'No se pudo cambiar la contraseña';
+  } catch (e) { $('#pwError').textContent = 'Sin conexión'; }
+};
+window.addEventListener('online', () => cloud.schedule(0));
+document.addEventListener('visibilitychange', () => {
+  if (!cloud.authed) return;
+  if (document.visibilityState === 'visible') cloud.schedule(0);
+  else if (cloud.pendingCount()) cloud.syncNow();
+});
 
 /* ---------- Instalación ---------- */
 let installEvt = null;
@@ -850,6 +1066,7 @@ if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) $(
   try { await purgeOldDocs(); } catch (e) {}
   if (!settings.projects.includes(settings.project)) settings.project = settings.projects[0];
   render();
+  cloud.start();
   const nuevo = new URLSearchParams(location.search).get('nuevo');
   if (TYPES[nuevo]) { history.replaceState(null, '', location.pathname); openAdd(nuevo); }
   if (useMemory) toast('Este navegador no permite guardar datos: se perderán al cerrar');

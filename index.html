@@ -27,6 +27,9 @@
         <button class="project-btn" id="projectBtn" aria-label="Cambiar proyecto"><span id="projectName">Clínica FC Salud</span> <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
       </div>
     </div>
+    <button class="sync-btn" id="syncBtn" aria-label="Estado de la nube" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.6 9.1 4.7 4.7 0 0 0 7 18.5z"/></svg><i></i>
+    </button>
     <button class="icon-btn" id="installBtn" hidden aria-label="Instalar app">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg>
     </button>
@@ -180,9 +183,19 @@
         </div>
       </div>
 
+      <div class="card" id="cloudCard">
+        <h2 class="card-title">Guardado en la nube</h2>
+        <p class="muted" id="cloudStatus">Comprobando…</p>
+        <div class="btn-row">
+          <button class="btn btn-soft" id="syncNowBtn">Sincronizar</button>
+          <button class="btn btn-soft" id="pwBtn">Contraseña</button>
+        </div>
+        <button class="btn btn-ghost btn-block" id="logoutBtn">Cerrar sesión en este dispositivo</button>
+      </div>
+
       <div class="card">
         <h2 class="card-title">Copia de seguridad</h2>
-        <p class="muted">Los datos se guardan solo en este dispositivo. Haz una copia de vez en cuando.</p>
+        <p class="muted">Además de la nube, puedes descargar una copia completa en un archivo.</p>
         <div class="btn-row">
           <button class="btn btn-soft" id="exportBtn">Exportar copia</button>
           <label class="btn btn-soft">Importar copia<input type="file" id="importInput" accept="application/json" hidden></label>
@@ -197,8 +210,8 @@
 
       <div class="card">
         <h2 class="card-title">Privacidad</h2>
-        <p class="muted">La lectura de facturas se hace dentro del propio móvil: las fotos y PDF no se envían a ningún servidor. Los justificantes se borran solos a los 4 meses de subirlos; antes se incluyen en el informe mensual. Los cálculos son orientativos y no sustituyen la revisión de la asesoría.</p>
-        <button class="btn btn-danger-soft btn-block" id="wipeBtn">Borrar todos los datos</button>
+        <p class="muted">La lectura de facturas se hace dentro del propio móvil. Los movimientos y facturas se guardan en un almacén privado de Vercel al que solo se accede con la contraseña. Los justificantes se borran solos a los 4 meses de subirlos; antes se incluyen en el informe mensual. Los cálculos son orientativos y no sustituyen la revisión de la asesoría.</p>
+        <button class="btn btn-danger-soft btn-block" id="wipeBtn">Vaciar este dispositivo</button>
       </div>
       <p class="version">FCSALUD · Control diario · v1.0</p>
     </section>
@@ -309,6 +322,35 @@
       <label class="field"><span>Nuevo proyecto</span><input id="projectInput" placeholder="Ej. Reforma del local" maxlength="60"></label>
       <button class="btn btn-primary btn-block" id="projectCreate">Crear y usar</button>
     </section>
+  </div>
+
+  <!-- HOJA: CONTRASEÑA -->
+  <div class="sheet-wrap" id="pwSheet" aria-hidden="true">
+    <div class="scrim" data-close></div>
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="pwTitle">
+      <div class="grabber"></div>
+      <header class="sheet-head">
+        <h2 id="pwTitle">Cambiar contraseña</h2>
+        <button class="icon-btn" data-close aria-label="Cerrar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </header>
+      <label class="field"><span>Contraseña actual</span><input id="pwCurrent" type="password" autocomplete="current-password"></label>
+      <label class="field"><span>Nueva contraseña (mínimo 6 caracteres)</span><input id="pwNext" type="password" autocomplete="new-password"></label>
+      <p class="form-error" id="pwError" role="alert"></p>
+      <button class="btn btn-primary btn-block" id="pwSave">Guardar contraseña</button>
+    </section>
+  </div>
+
+  <!-- ACCESO -->
+  <div class="login" id="login" hidden>
+    <form class="login-card" id="loginForm">
+      <div class="login-mark"><img src="icons/mark-white.png" alt=""></div>
+      <h1>FCSALUD</h1>
+      <p>Control diario de la clínica</p>
+      <label class="field"><span>Contraseña</span><input id="loginPw" type="password" autocomplete="current-password" enterkeyhint="go"></label>
+      <p class="form-error" id="loginError" role="alert"></p>
+      <button class="btn btn-primary btn-block btn-lg" id="loginBtn" type="submit">Entrar</button>
+      <small>Tus datos se guardan en tu almacén privado y se sincronizan entre tus dispositivos.</small>
+    </form>
   </div>
 
   <!-- LECTURA OCR -->

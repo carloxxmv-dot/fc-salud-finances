@@ -207,6 +207,23 @@ main{padding:4px 18px calc(var(--tabbar) + var(--safe-b) + 36px);max-width:560px
 .path-chips button.on{background:var(--sage-700);color:#fff;box-shadow:none}
 .purge-note{background:var(--cash-bg);color:var(--cash-ink);border-radius:14px;padding:12px 14px;font-size:14px;margin:0 0 10px}
 
+/* Nube */
+.sync-btn{margin-left:auto;position:relative;width:42px;height:42px;border-radius:50%;display:grid;place-items:center;color:var(--sage-700);background:var(--sage-100)}
+.sync-btn+.icon-btn{margin-left:8px}
+.sync-btn i{position:absolute;right:8px;bottom:9px;width:10px;height:10px;border-radius:50%;background:var(--in);box-shadow:0 0 0 2px var(--sage-100)}
+.sync-btn.pending i{background:var(--cash)}
+.sync-btn.offline i{background:#9aa6a0}
+.sync-btn.error i{background:var(--exp)}
+.sync-btn.busy svg{animation:pulse 1.2s ease-in-out infinite}
+.login{position:fixed;inset:0;z-index:95;display:grid;place-items:center;padding:24px;background:radial-gradient(120% 90% at 50% 0%,#b6c3ba 0%,#8a9d91 45%,#5f7468 100%)}
+.login-card{width:min(380px,100%);background:#fff;border-radius:28px;padding:28px 22px 20px;text-align:center;box-shadow:0 24px 60px #1d2a2340}
+.login-mark{width:76px;height:76px;margin:0 auto 12px;border-radius:24px;background:var(--sage);display:grid;place-items:center}
+.login-mark img{width:48px}
+.login-card h1{margin:0;font-size:26px;font-weight:800;letter-spacing:.6px;color:var(--sage-800)}
+.login-card>p{margin:2px 0 20px;color:var(--muted)}
+.login-card .field{text-align:left}
+.login-card small{display:block;margin-top:14px;color:var(--muted);font-size:12px}
+
 /* Botones */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:15px;padding:14px 18px;font-weight:700;font-size:16px;transition:transform .12s ease,background .2s}
 .btn:active{transform:scale(.97)}

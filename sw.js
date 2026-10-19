@@ -1,5 +1,5 @@
 /* FCSALUD · service worker: la app funciona sin conexión una vez abierta. */
-const VERSION = 'fcsalud-v2';
+const VERSION = 'fcsalud-v3';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon.png', 'icons/mark-white.png'];
 
@@ -14,6 +14,8 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   // Archivos propios: primero la red (para recibir actualizaciones), si no hay, la copia guardada.
+  // Los datos privados (/api) nunca se guardan en caché.
+  if (url.origin === location.origin && url.pathname.startsWith('/api/')) return;
   if (url.origin === location.origin) {
     e.respondWith(fetch(req).then(res => {
       const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); return res;
