@@ -427,7 +427,10 @@ function showDoc(doc) {
   $('#docName').textContent = doc.name;
   const th = $('#docThumb');
   if ((doc.type || '').startsWith('image/')) { th.style.backgroundImage = `url("${docPreviewUrl}")`; th.innerHTML = ''; }
-  else { th.style.backgroundImage = ''; th.innerHTML = ICONS.doc; }
+  else {
+    th.style.backgroundImage = ''; th.innerHTML = ICONS.doc;
+    if (isPdf(doc)) openPdf(doc.blob).then(pdf => { if (form.doc === doc || !form.doc) $('#docName').textContent = `${doc.name} · ${pdf.numPages} ${pdf.numPages === 1 ? 'página' : 'páginas'}`; }).catch(() => {});
+  }
 }
 function openAdd(type = 'tpv', move = null, swapFrom = null) {
   $('#formError').textContent = '';
@@ -549,9 +552,32 @@ function openViewer(doc) {
   viewerUrl = URL.createObjectURL(doc.blob);
   $('#viewerTitle').textContent = doc.name;
   const a = $('#viewerDownload'); a.href = viewerUrl; a.download = doc.name;
-  $('#viewerBody').innerHTML = (doc.type || '').startsWith('image/') ? `<img src="${viewerUrl}" alt="${esc(doc.name)}">` : `<iframe src="${viewerUrl}" title="${esc(doc.name)}"></iframe>`;
+  const body = $('#viewerBody');
+  body.classList.toggle('pages', isPdf(doc));
+  body.innerHTML = isPdf(doc) ? '<p class="viewer-msg">Cargando páginas…</p>' : `<img src="${viewerUrl}" alt="${esc(doc.name)}">`;
   $('#viewer').hidden = false;
-  openLayer($('#viewer'), () => { $('#viewer').hidden = true; $('#viewerBody').innerHTML = ''; });
+  const token = viewerUrl;
+  openLayer($('#viewer'), () => { $('#viewer').hidden = true; body.innerHTML = ''; });
+  if (isPdf(doc)) renderPdfPages(doc, body, token);
+}
+// Los móviles solo enseñan la primera hoja de un PDF dentro de la app, así que se dibujan todas.
+async function renderPdfPages(doc, body, token) {
+  try {
+    const pdf = await openPdf(doc.blob);
+    const width = Math.min(1600, (body.clientWidth || 360) * (window.devicePixelRatio || 1));
+    body.innerHTML = '';
+    for (let n = 1; n <= pdf.numPages; n++) {
+      if (viewerUrl !== token || $('#viewer').hidden) return;
+      const c = await renderPdfPage(pdf, n, width);
+      const fig = document.createElement('figure');
+      fig.className = 'viewer-page';
+      fig.appendChild(c);
+      if (pdf.numPages > 1) fig.insertAdjacentHTML('beforeend', `<figcaption>Página ${n} de ${pdf.numPages}</figcaption>`);
+      body.appendChild(fig);
+    }
+  } catch (e) {
+    if (viewerUrl === token) body.innerHTML = `<p class="viewer-msg">No se pudo mostrar el PDF aquí. Usa “Descargar” para abrirlo.</p>`;
+  }
 }
 $('#viewerClose').onclick = () => closeTop();
 
@@ -563,11 +589,15 @@ function loadScript(src, id) {
     document.head.appendChild(s);
   });
 }
-async function pdfToImage(file) {
+const isPdf = d => (d.type || '') === 'application/pdf' || /\.pdf$/i.test(d.name || '');
+async function openPdf(blob) {
   await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', 'pdfjs');
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
-  const page = await pdf.getPage(1), vp = page.getViewport({ scale: 2 });
+  return pdfjsLib.getDocument({ data: await blob.arrayBuffer() }).promise;
+}
+async function renderPdfPage(pdf, n, width) {
+  const page = await pdf.getPage(n), vp0 = page.getViewport({ scale: 1 });
+  const vp = page.getViewport({ scale: Math.min(3, width / vp0.width) });
   const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
   await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
   return c;
@@ -615,7 +645,7 @@ async function readDocument(file) {
   $('#ocrBar').style.width = '6%';
   try {
     await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js', 'tesseract');
-    const source = file.type === 'application/pdf' ? await pdfToImage(file) : await shrinkImage(file);
+    const source = await shrinkImage(file);
     if (ocrCancelled) return null;
     $('#ocrMsg').textContent = 'Buscando proveedor e importe…';
     ocrWorker = await Tesseract.createWorker('spa', 1, {
@@ -650,6 +680,8 @@ async function attachFile(file) {
   form.doc = { blob: file, name: file.name || 'foto.jpg', type: file.type };
   form.removeDoc = false;
   showDoc(form.doc);
+  // Los PDF se guardan completos (todas sus páginas) y los datos se escriben a mano.
+  if (isPdf(form.doc)) { $('#docHint').textContent = 'PDF adjunto: escribe proveedor e importe'; return; }
   $('#docHint').textContent = 'Leyendo…';
   try {
     const r = await readDocument(file);
