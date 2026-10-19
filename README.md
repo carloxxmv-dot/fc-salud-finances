@@ -4,10 +4,12 @@ App web instalable para el control diario de la Clínica FC Salud, creada a part
 
 ## Qué incluye
 - **Hoy**: balance del día, accesos de un toque a TPV, Efectivo y Gasto, y lista de movimientos. Desliza la tarjeta verde para cambiar de día.
-- **Registrar**: tipo (TPV / Efectivo / Gasto), área (Fisioterapia / Podología), importe grande con importes frecuentes, nota y fecha.
+- **Registrar**: tipo (TPV / Efectivo / Gasto), área (Fisioterapia / Podología), importe grande con importes frecuentes, patología (con las más usadas a un toque) y fecha.
 - **Gastos con foto o PDF**: la app lee proveedor e importe total en el propio móvil (Tesseract.js) y guarda el justificante para verlo o descargarlo después.
 - **Historial**: por mes, agrupado por día, con buscador y filtros por tipo y área.
-- **Resumen**: totales del mes, reparto Fisioterapia/Podología, gráfico día a día y **PDF mensual para la asesoría** (descargar o enviar).
+- **Resumen**: TPV y efectivo de Podología y Fisioterapia, total cobrado, reparto por área, ranking de patologías (por sesiones o por ingresos, del mes o del año), gráfico día a día e **informe mensual para la asesoría** (descargar o enviar).
+- **Informe mensual (PDF)**: cuadros de resumen, listado solo de gastos y, a continuación, las facturas subidas ese mes (imágenes y PDF).
+- **Justificantes**: se borran solos del móvil a los 4 meses de subirlos.
 - **Ajustes**: proyectos, área preseleccionada, copia de seguridad (exportar/importar con justificantes) y borrado de datos.
 - Editar, eliminar con "Deshacer", cerrar hojas deslizando hacia abajo o con el botón Atrás de Android.
 

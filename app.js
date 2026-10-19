@@ -104,11 +104,11 @@ const state = { view: 'hoy', day: todayISO(), month: monthOf(todayISO()), filter
 const projectMoves = () => moves.filter(m => (m.project || 'Clínica FC Salud') === settings.project);
 
 function totals(list) {
-  const t = { tpv: 0, cash: 0, expense: 0, physio: 0, podo: 0 };
+  const t = { tpv: 0, cash: 0, expense: 0, physio: 0, podo: 0, tpv_physio: 0, tpv_podo: 0, cash_physio: 0, cash_podo: 0 };
   for (const m of list) {
     const a = amountOf(m);
     t[m.type] += a;
-    if (m.type !== 'expense') t[AREAS[m.service] || 'physio'] += a;
+    if (m.type !== 'expense') { const area = AREAS[m.service] || 'physio'; t[area] += a; t[`${m.type}_${area}`] += a; }
   }
   t.income = t.tpv + t.cash;
   t.balance = t.income - t.expense;
@@ -172,10 +172,13 @@ function renderResumen() {
   $('#mBalance').textContent = euro(t.balance);
   $('#mIncome').textContent = euro(t.income);
   $('#mExpense').textContent = euro(t.expense);
-  $('#mTpv').textContent = euro(t.tpv);
-  $('#mCash').textContent = euro(t.cash);
-  $('#mPhysio').textContent = euro(t.physio);
-  $('#mPodo').textContent = euro(t.podo);
+  $('#mTpvPodo').textContent = euro(t.tpv_podo);
+  $('#mTpvPhysio').textContent = euro(t.tpv_physio);
+  $('#mCashPodo').textContent = euro(t.cash_podo);
+  $('#mCashPhysio').textContent = euro(t.cash_physio);
+  $('#mTotal').textContent = euro(t.income);
+  renderPathStats();
+  renderPurgeNote(list);
   const pp = t.income ? Math.round(t.physio / t.income * 100) : 0;
   const [bp, bo] = $$('#areaBar i');
   bp.style.width = t.income ? pp + '%' : '0';
@@ -192,6 +195,56 @@ function renderResumen() {
   $('#dayChart').innerHTML = max ? perDay.map(d => `<div class="col${d.ds === today ? ' today' : ''}" title="${dayLabel(d.ds)}: ${euro(d.inc)} / ${euro(d.exp)}"><i class="ci" style="height:${d.inc / max * 100}%"></i><i class="co" style="height:${d.exp / max * 100}%"></i></div>`).join('')
     : '<div class="chart-empty">Sin datos este mes</div>';
 }
+
+/* ---------- Patologías ---------- */
+// La nota de cada cobro es la patología atendida. Si hay varias separadas por comas,
+// el importe se reparte a partes iguales entre ellas.
+const pathKey = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const splitPaths = note => String(note || '').split(/[,;+]/).map(x => x.trim()).filter(Boolean);
+function pathologyStats(list) {
+  const map = new Map();
+  let none = { count: 0, amount: 0 };
+  for (const m of list) {
+    if (m.type === 'expense') continue;
+    const parts = splitPaths(m.note), a = amountOf(m);
+    if (!parts.length) { none.count++; none.amount += a; continue; }
+    for (const p of parts) {
+      const k = pathKey(p);
+      const e = map.get(k) || { count: 0, amount: 0, names: {} };
+      e.count++; e.amount += a / parts.length; e.names[p] = (e.names[p] || 0) + 1;
+      map.set(k, e);
+    }
+  }
+  const rows = [...map.values()].map(e => {
+    const name = Object.entries(e.names).sort((x, y) => y[1] - x[1])[0][0];
+    return { name: cap(name), count: e.count, amount: e.amount };
+  });
+  return { rows, none };
+}
+const pathView = { period: 'month', sort: 'count' };
+function renderPathStats() {
+  const year = state.month.slice(0, 4);
+  const list = projectMoves().filter(m => pathView.period === 'month' ? monthOf(m.date) === state.month : m.date.startsWith(year));
+  const { rows, none } = pathologyStats(list);
+  rows.sort((a, b) => pathView.sort === 'count' ? b.count - a.count || b.amount - a.amount : b.amount - a.amount || b.count - a.count);
+  $$('#pathPeriod button').forEach(b => { b.classList.toggle('on', b.dataset.p === pathView.period); if (b.dataset.p === 'year') b.textContent = year; });
+  $$('#pathSort button').forEach(b => b.classList.toggle('on', b.dataset.s === pathView.sort));
+  if (!rows.length) {
+    $('#pathStats').innerHTML = `<p class="path-empty">Escribe la patología al registrar un cobro y aquí verás cuáles atiendes más y cuánto te aportan.</p>`;
+    return;
+  }
+  const top = rows.slice(0, 12), max = Math.max(...top.map(r => pathView.sort === 'count' ? r.count : r.amount));
+  const sesiones = n => `${n} sesi${n === 1 ? 'ón' : 'ones'}`;
+  $('#pathStats').innerHTML = top.map((r, i) => {
+    const v = pathView.sort === 'count' ? r.count : r.amount;
+    return `<div class="path-row"><span class="path-rank">${i + 1}</span><span class="path-name">${esc(r.name)}</span>
+      <span class="path-val">${pathView.sort === 'count' ? `<b>${sesiones(r.count)}</b><small>${euro(r.amount)}</small>` : `<b>${euro(r.amount)}</b><small>${sesiones(r.count)}</small>`}</span>
+      <span class="path-bar"><i style="width:${max ? v / max * 100 : 0}%"></i></span></div>`;
+  }).join('') + (rows.length > 12 ? `<p class="path-empty">y ${rows.length - 12} más</p>` : '') +
+    (none.count ? `<div class="path-row muted-row"><span class="path-rank">·</span><span class="path-name">Sin patología indicada</span><span class="path-val">${sesiones(none.count)}<br><small>${euro(none.amount)}</small></span></div>` : '');
+}
+$('#pathPeriod').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { pathView.period = b.dataset.p; renderPathStats(); } });
+$('#pathSort').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { pathView.sort = b.dataset.s; renderPathStats(); } });
 
 function renderProjects() {
   $('#projectName').textContent = settings.project;
@@ -328,10 +381,33 @@ function renderPresets() {
   const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 4).map(x => +x[0]);
   const list = top.length ? top : (form.type === 'expense' ? [] : [30, 40, 50, 60]);
   $('#presets').innerHTML = list.map(a => `<button type="button" data-a="${a}">${euro(a)}</button>`).join('');
+  // Patologías más frecuentes, para escribirlas con un toque.
+  if (form.type !== 'expense') {
+    const { rows } = pathologyStats(projectMoves());
+    rows.sort((a, b) => b.count - a.count);
+    $('#pathList').innerHTML = rows.slice(0, 40).map(r => `<option value="${esc(r.name)}">`).join('');
+    renderPathChips(rows.slice(0, 8).map(r => r.name));
+  }
   // Proveedores ya usados.
   const parties = [...new Set(projectMoves().filter(m => m.type === 'expense' && m.party).map(m => m.party))].slice(0, 30);
   $('#partyList').innerHTML = parties.map(p => `<option value="${esc(p)}">`).join('');
 }
+let pathChipNames = [];
+function renderPathChips(names) {
+  if (names) pathChipNames = names;
+  const cur = splitPaths($('#noteInput').value).map(pathKey);
+  $('#pathChips').innerHTML = pathChipNames.map(n => `<button type="button" class="${cur.includes(pathKey(n)) ? 'on' : ''}" data-p="${esc(n)}">${esc(n)}</button>`).join('');
+}
+$('#pathChips').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const parts = splitPaths($('#noteInput').value), k = pathKey(b.dataset.p);
+  const i = parts.findIndex(x => pathKey(x) === k);
+  if (i >= 0) parts.splice(i, 1); else parts.push(b.dataset.p);
+  $('#noteInput').value = parts.join(', ');
+  renderPathChips(); vibrate(5);
+});
+$('#noteInput').addEventListener('input', () => renderPathChips());
+$('#noteInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveMove(); } });
 function updateSaveLabel() {
   const inp = $('#amountInput');
   inp.style.width = Math.max(3, (inp.value || inp.placeholder).length + 0.6) + 'ch';
@@ -360,6 +436,7 @@ function openAdd(type = 'tpv', move = null, swapFrom = null) {
   setArea(move ? move.service : settings.area);
   $('#amountInput').value = move ? fmtInput(amountOf(move)) : '';
   $('#noteInput').value = move?.note || '';
+  renderPathChips();
   $('#partyInput').value = move?.party || '';
   $('#dateInput').value = move ? move.date : state.day;
   $('#docHint').textContent = 'Toca para verlo';
@@ -398,13 +475,13 @@ async function saveMove() {
     createdAt: prev?.createdAt || Date.now(),
     updatedAt: Date.now()
   };
-  if (form.type === 'expense') { m.party = party; m.total = amount; } else { m.amount = amount; m.note = $('#noteInput').value.trim(); }
+  if (form.type === 'expense') { m.party = party; m.total = amount; } else { m.amount = amount; m.note = splitPaths($('#noteInput').value).join(', '); }
   if (form.type === 'expense') {
     if (form.doc) {
       const docId = form.docId && !form.removeDoc ? form.docId : uid();
-      await store.put('docs', { id: docId, blob: form.doc.blob, name: form.doc.name, type: form.doc.type });
-      m.docId = docId; m.file = { name: form.doc.name, type: form.doc.type };
-    } else if (form.docId && !form.removeDoc) { m.docId = form.docId; m.file = prev?.file; }
+      await store.put('docs', { id: docId, blob: form.doc.blob, name: form.doc.name, type: form.doc.type, uploadedAt: Date.now() });
+      m.docId = docId; m.docAt = Date.now(); m.file = { name: form.doc.name, type: form.doc.type };
+    } else if (form.docId && !form.removeDoc) { m.docId = form.docId; m.docAt = prev?.docAt; m.file = prev?.file; }
   }
   if (prev?.docId && (form.removeDoc || form.type !== 'expense') && prev.docId !== m.docId) await store.del('docs', prev.docId);
   await store.put('moves', m);
@@ -429,7 +506,7 @@ function openDetail(id) {
   $('#detAmount').style.color = m.type === 'expense' ? 'var(--exp-ink)' : '';
   $('#detDesc').textContent = m.type === 'expense' ? m.party : (m.note || t.long);
   $('#detDate').textContent = dayLabel(m.date) + (settings.projects.length > 1 ? ' · ' + (m.project || 'Clínica FC Salud') : '');
-  $('#detDoc').innerHTML = m.docId ? `<button class="det-doc" id="detDocBtn"><span class="doc-thumb">${ICONS.doc}</span><div><strong>${esc(m.file?.name || 'Justificante')}</strong><small>Ver o descargar justificante</small></div></button>` : '';
+  $('#detDoc').innerHTML = m.docPurged && !m.docId ? `<p class="muted">El justificante (${esc(m.file?.name || 'archivo')}) se borró automáticamente a los 4 meses de subirlo.</p>` : m.docId ? `<button class="det-doc" id="detDocBtn"><span class="doc-thumb">${ICONS.doc}</span><div><strong>${esc(m.file?.name || 'Justificante')}</strong><small>Ver o descargar justificante</small></div></button>` : '';
   if (m.docId) {
     store.get('docs', m.docId).then(d => {
       if (!d) return;
@@ -583,33 +660,116 @@ async function buildMonthlyPdf() {
   await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'jspdf');
   await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js', 'jspdf-at');
   const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: 'mm', format: 'a4' }), t = totals(rows);
+  const expenses = rows.filter(m => m.type === 'expense');
+  const withDoc = expenses.filter(m => m.docId);
   const label = monthLabel(state.month);
   doc.setFillColor(165, 178, 169); doc.rect(0, 0, 210, 32, 'F');
   try { doc.addImage(await imageDataURL('icons/icon-192.png'), 'PNG', 13, 6, 20, 20); } catch (e) {}
   doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.text('FCSALUD', 38, 15);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(pdfSafe(settings.project + ' - Control diario para la asesoria'), 38, 22);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(pdfSafe(settings.project + ' - Informe mensual para la asesoría'), 38, 22);
   doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text(pdfSafe(label), 196, 18, { align: 'right' });
   doc.setTextColor(36, 49, 42); doc.setFontSize(14); doc.text('Resumen mensual', 14, 44);
-  const metrics = [['TPV', t.tpv], ['Efectivo', t.cash], ['Gastos', t.expense], ['Balance', t.balance], ['Fisioterapia', t.physio], ['Podologia', t.podo]];
-  const tint = { 0: [223, 242, 238], 1: [251, 240, 217], 2: [250, 231, 229], 3: [228, 235, 230], 4: [230, 239, 250], 5: [240, 234, 251] };
-  metrics.forEach((m, i) => {
-    const x = 14 + (i % 3) * 61, y = 49 + Math.floor(i / 3) * 19;
-    doc.setFillColor(...tint[i]); doc.roundedRect(x, y, 57, 15, 2, 2, 'F');
-    doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(104, 120, 111); doc.text(m[0], x + 4, y + 5);
-    doc.setFontSize(11.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(36, 49, 42); doc.text(pdfSafe(euro(m[1])), x + 4, y + 11.5);
-  });
-  const body = rows.map(m => [parseISO(m.date).toLocaleDateString('es-ES'), TYPES[m.type].label, m.service.replace('í', 'i'), pdfSafe(m.type === 'expense' ? m.party : (m.note || TYPES[m.type].long)) + (m.docId ? ' *' : ''), pdfSafe((m.type === 'expense' ? '-' : '') + euro(amountOf(m)))]);
-  doc.autoTable({
-    startY: 91, head: [['Fecha', 'Categoria', 'Area', 'Detalle', 'Importe']], body, theme: 'grid',
-    styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 2.5, textColor: [36, 49, 42], lineColor: [224, 230, 226] },
-    headStyles: { fillColor: [82, 103, 89], textColor: 255, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [244, 247, 245] },
-    columnStyles: { 0: { cellWidth: 23 }, 1: { cellWidth: 22 }, 2: { cellWidth: 27 }, 3: { cellWidth: 86 }, 4: { cellWidth: 24, halign: 'right' } }
-  });
-  let end = doc.lastAutoTable.finalY + 9; if (end > 275) { doc.addPage(); end = 20; }
+  // Cuadros: cobros por forma de pago y área, y después totales.
+  const box = (x, y, w, title, value, fill, bold) => {
+    doc.setFillColor(...fill); doc.roundedRect(x, y, w, 16, 2, 2, 'F');
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...(bold ? [255, 255, 255] : [104, 120, 111])); doc.text(pdfSafe(title), x + 4, y + 5.5);
+    doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(...(bold ? [255, 255, 255] : [36, 49, 42])); doc.text(pdfSafe(euro(value)), x + 4, y + 12.5);
+  };
+  [['TPV Podología', t.tpv_podo, [223, 242, 238]], ['TPV Fisioterapia', t.tpv_physio, [223, 242, 238]], ['Efectivo Podología', t.cash_podo, [251, 240, 217]], ['Efectivo Fisioterapia', t.cash_physio, [251, 240, 217]]]
+    .forEach((m, i) => box(14 + i * 46, 49, 43, m[0], m[1], m[2]));
+  [['Total cobrado', t.income, [82, 103, 89], true], ['Gastos', t.expense, [250, 231, 229]], ['Balance', t.balance, [228, 235, 230]]]
+    .forEach((m, i) => box(14 + i * 61.33, 69, 58.33, m[0], m[1], m[2], m[3]));
+  doc.setTextColor(36, 49, 42); doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.text('Gastos del mes', 14, 100);
+  let end;
+  if (expenses.length) {
+    doc.autoTable({
+      startY: 104, head: [['Fecha', 'Área', 'Proveedor o servicio', 'Factura', 'Importe']],
+      body: expenses.map(m => [parseISO(m.date).toLocaleDateString('es-ES'), m.service, pdfSafe(m.party), m.docId ? 'Adjunta' : m.docPurged ? 'Borrada' : '-', pdfSafe(euro(m.total))]),
+      foot: [[{ content: 'Total gastos', colSpan: 4 }, pdfSafe(euro(t.expense))]],
+      theme: 'grid',
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 2.6, textColor: [36, 49, 42], lineColor: [224, 230, 226] },
+      headStyles: { fillColor: [82, 103, 89], textColor: 255, fontStyle: 'bold' },
+      footStyles: { fillColor: [250, 231, 229], textColor: [161, 66, 60], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [244, 247, 245] },
+      columnStyles: { 0: { cellWidth: 24 }, 1: { cellWidth: 28 }, 2: { cellWidth: 84 }, 3: { cellWidth: 20 }, 4: { cellWidth: 26, halign: 'right' } }
+    });
+    end = doc.lastAutoTable.finalY + 9;
+  } else {
+    doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(104, 120, 111); doc.text('No hay gastos registrados este mes.', 14, 110); end = 120;
+  }
+  if (end > 275) { doc.addPage(); end = 20; }
   doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(104, 120, 111);
-  doc.text('* Gasto con justificante guardado en la app. Informe generado por FCSALUD; los importes deben revisarse con la asesoria.', 14, end, { maxWidth: 182 });
-  return { blob: doc.output('blob'), name: `FCSALUD_${state.month}.pdf` };
+  doc.text(pdfSafe((withDoc.length ? `Se adjuntan a continuación ${withDoc.length} factura${withDoc.length > 1 ? 's' : ''}. ` : '') + 'Informe generado por FCSALUD; los importes deben revisarse con la asesoría.'), 14, end, { maxWidth: 182 });
+  const report = doc.output('arraybuffer'), name = `FCSALUD_${state.month}.pdf`;
+  if (!withDoc.length) return { blob: new Blob([report], { type: 'application/pdf' }), name };
+  return { blob: await appendInvoices(report, withDoc), name };
+}
+
+// Añade al informe una página por cada imagen y por cada página de los PDF subidos.
+async function appendInvoices(reportBytes, list) {
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js', 'pdf-lib');
+  const { PDFDocument, StandardFonts, rgb } = window.PDFLib;
+  const out = await PDFDocument.load(reportBytes);
+  const font = await out.embedFont(StandardFonts.Helvetica), bold = await out.embedFont(StandardFonts.HelveticaBold);
+  const W = 595.28, H = 841.89, M = 36, HEAD = 46;
+  const ansi = s => pdfSafe(s).replace(/[^\x20-\x7E -ÿ€]/g, '');
+  const header = (page, i, m, extra) => {
+    page.drawRectangle({ x: 0, y: H - HEAD, width: W, height: HEAD, color: rgb(0.894, 0.922, 0.902) });
+    page.drawText(ansi(`Factura ${i + 1} de ${list.length}${extra || ''}`), { x: M, y: H - 20, size: 9, font, color: rgb(0.41, 0.47, 0.44) });
+    page.drawText(ansi(`${parseISO(m.date).toLocaleDateString('es-ES')} · ${m.party} · ${m.service} · ${euro(m.total)}`).slice(0, 95), { x: M, y: H - 35, size: 12, font: bold, color: rgb(0.14, 0.19, 0.16) });
+  };
+  const fit = (w, h) => { const k = Math.min((W - 2 * M) / w, (H - HEAD - 2 * M) / h, 1.5); return { width: w * k, height: h * k, x: (W - w * k) / 2, y: (H - HEAD - M) - h * k }; };
+  for (let i = 0; i < list.length; i++) {
+    const m = list[i], d = await store.get('docs', m.docId);
+    if (!d) continue;
+    try {
+      if (d.type === 'application/pdf' || /\.pdf$/i.test(d.name)) {
+        const src = await PDFDocument.load(await d.blob.arrayBuffer(), { ignoreEncryption: true });
+        const pages = await out.embedPages(src.getPages());
+        pages.forEach((ep, j) => {
+          const page = out.addPage([W, H]);
+          header(page, i, m, pages.length > 1 ? ` · página ${j + 1} de ${pages.length}` : '');
+          page.drawPage(ep, fit(ep.width, ep.height));
+        });
+      } else {
+        const c = await shrinkImage(d.blob, 2000);
+        const jpg = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.85));
+        const img = await out.embedJpg(await jpg.arrayBuffer());
+        const page = out.addPage([W, H]);
+        header(page, i, m);
+        page.drawImage(img, fit(img.width, img.height));
+      }
+    } catch (e) {
+      const page = out.addPage([W, H]);
+      header(page, i, m);
+      page.drawText(ansi(`No se pudo adjuntar el archivo «${d.name}». Envíalo por separado.`), { x: M, y: H - HEAD - 40, size: 11, font, color: rgb(0.63, 0.26, 0.24) });
+    }
+  }
+  return new Blob([await out.save()], { type: 'application/pdf' });
+}
+
+/* ---------- Borrado automático de justificantes (4 meses) ---------- */
+const KEEP_MONTHS = 4;
+const expiryOf = ts => { const d = new Date(ts); d.setMonth(d.getMonth() + KEEP_MONTHS); return d; };
+async function purgeOldDocs() {
+  const docs = await store.all('docs'), now = Date.now();
+  let n = 0;
+  for (const d of docs) {
+    const m = moves.find(x => x.docId === d.id);
+    const uploaded = d.uploadedAt || m?.docAt || m?.createdAt || now;
+    if (m && expiryOf(uploaded).getTime() > now) continue;
+    await store.del('docs', d.id);
+    if (m) { m.docId = null; m.docPurged = true; await store.put('moves', m); n++; }
+  }
+  return n;
+}
+function renderPurgeNote(list) {
+  const withDoc = list.filter(m => m.type === 'expense' && m.docId);
+  const el = $('#purgeNote');
+  if (!withDoc.length) { el.hidden = true; return; }
+  const first = new Date(Math.min(...withDoc.map(m => expiryOf(m.docAt || m.createdAt).getTime())));
+  el.hidden = false;
+  el.textContent = `El informe incluye ${withDoc.length} factura${withDoc.length > 1 ? 's' : ''}. Se borrarán del móvil a partir del ${first.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}: descarga el informe antes.`;
 }
 async function withBusy(btn, fn) {
   const html = btn.innerHTML; btn.disabled = true; btn.textContent = 'Preparando PDF…';
@@ -687,6 +847,7 @@ if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) $(
 (async () => {
   try { await db.open(); } catch (e) { useMemory = true; }
   try { moves = await store.all('moves'); } catch (e) { moves = []; }
+  try { await purgeOldDocs(); } catch (e) {}
   if (!settings.projects.includes(settings.project)) settings.project = settings.projects[0];
   render();
   const nuevo = new URLSearchParams(location.search).get('nuevo');

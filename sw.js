@@ -1,5 +1,5 @@
 /* FCSALUD · service worker: la app funciona sin conexión una vez abierta. */
-const VERSION = 'fcsalud-v1';
+const VERSION = 'fcsalud-v2';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon.png', 'icons/mark-white.png'];
 

@@ -171,6 +171,42 @@ main{padding:4px 18px calc(var(--tabbar) + var(--safe-b) + 36px);max-width:560px
 .chart-empty{width:100%;align-self:center;text-align:center;color:var(--muted);font-size:14px}
 .export{display:grid;gap:10px;margin-top:6px}
 
+/* Cuadros de cobro por área (Resumen) */
+.cobro-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
+.cobro{background:var(--card);border-radius:var(--radius-sm);padding:13px 14px;box-shadow:var(--shadow);border-top:4px solid var(--c);text-align:left;display:flex;flex-direction:column;gap:8px}
+.cobro.c-tpv{--c:var(--tpv)}.cobro.c-cash{--c:var(--cash)}
+.cobro-head{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
+.cobro-head b{font-size:14px;font-weight:700;color:var(--muted)}
+.cobro-head .badge{font-style:normal;font-size:11px}
+.cobro strong{font-size:21px;font-weight:700;font-variant-numeric:tabular-nums}
+.cobro-total{grid-column:1/-1;flex-direction:row;align-items:center;justify-content:space-between;border-top:0;background:var(--sage-700);color:#fff}
+.cobro-total span{font-weight:600;font-size:15px;opacity:.92}
+.cobro-total strong{font-size:24px}
+
+/* Patologías */
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.card-head .card-title{margin:0}
+.mini-seg{display:inline-flex;gap:3px;padding:3px;background:var(--sage-50);border-radius:11px;box-shadow:inset 0 0 0 1px var(--line)}
+.mini-seg button{padding:6px 12px;border-radius:8px;font-size:13px;font-weight:600;color:var(--muted)}
+.mini-seg button.on{background:#fff;color:var(--sage-800);box-shadow:0 1px 4px #24312a1f}
+.mini-seg-wide{display:flex;margin-bottom:12px}
+.mini-seg-wide button{flex:1}
+.path-row{display:grid;grid-template-columns:22px 1fr auto;gap:4px 10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.path-row:first-child{border-top:0}
+.path-rank{font-size:13px;font-weight:700;color:var(--sage-600);text-align:center}
+.path-name{font-weight:600;font-size:15px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.path-val{text-align:right;font-variant-numeric:tabular-nums;font-size:14px;white-space:nowrap}
+.path-val b{display:block;font-size:15px}
+.path-val small{color:var(--muted)}
+.path-bar{grid-column:2/-1;height:6px;border-radius:9px;background:var(--sage-100);overflow:hidden}
+.path-bar i{display:block;height:100%;border-radius:9px;background:var(--sage-600)}
+.path-row.muted-row .path-name,.path-row.muted-row .path-val{color:var(--muted);font-weight:500}
+.path-empty{color:var(--muted);font-size:14px;text-align:center;padding:14px 0}
+.path-chips{display:flex;gap:7px;flex-wrap:wrap;margin:-4px 0 12px}
+.path-chips button{padding:7px 12px;border-radius:999px;background:#fff;box-shadow:inset 0 0 0 1px var(--line);font-size:13.5px;font-weight:600;color:var(--sage-800)}
+.path-chips button.on{background:var(--sage-700);color:#fff;box-shadow:none}
+.purge-note{background:var(--cash-bg);color:var(--cash-ink);border-radius:14px;padding:12px 14px;font-size:14px;margin:0 0 10px}
+
 /* Botones */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:15px;padding:14px 18px;font-weight:700;font-size:16px;transition:transform .12s ease,background .2s}
 .btn:active{transform:scale(.97)}
@@ -239,7 +275,7 @@ main{padding:4px 18px calc(var(--tabbar) + var(--safe-b) + 36px);max-width:560px
 .expense-only,.income-only{display:none}
 .mode-expense .expense-only{display:block}
 .mode-income .income-only{display:block}
-.mode-expense .field-row .field-date{flex:1}
+
 
 .doc-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
 .doc-btn{display:flex;align-items:center;gap:10px;padding:14px 12px;border-radius:16px;background:var(--exp-bg);color:var(--exp-ink);cursor:pointer;border:1.5px dashed #e3aaa4}

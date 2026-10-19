@@ -87,7 +87,7 @@
       </div>
       <label class="search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
-        <input id="search" type="search" placeholder="Buscar nota o proveedor" autocomplete="off">
+        <input id="search" type="search" placeholder="Buscar patología o proveedor" autocomplete="off">
       </label>
       <div class="chips" id="histChips" role="tablist">
         <button class="chip on" data-f="all">Todos</button>
@@ -118,11 +118,12 @@
         <img class="hero-mark" src="icons/mark-white.png" alt="">
       </article>
 
-      <div class="stat-grid">
-        <div class="stat s-tpv"><span>TPV</span><strong id="mTpv">0,00 €</strong></div>
-        <div class="stat s-cash"><span>Efectivo</span><strong id="mCash">0,00 €</strong></div>
-        <div class="stat s-physio"><span>Fisioterapia</span><strong id="mPhysio">0,00 €</strong></div>
-        <div class="stat s-podo"><span>Podología</span><strong id="mPodo">0,00 €</strong></div>
+      <div class="cobro-grid">
+        <div class="cobro c-tpv"><span class="cobro-head"><b>TPV</b><i class="badge b-podo">Podología</i></span><strong id="mTpvPodo">0,00 €</strong></div>
+        <div class="cobro c-tpv"><span class="cobro-head"><b>TPV</b><i class="badge b-physio">Fisioterapia</i></span><strong id="mTpvPhysio">0,00 €</strong></div>
+        <div class="cobro c-cash"><span class="cobro-head"><b>Efectivo</b><i class="badge b-podo">Podología</i></span><strong id="mCashPodo">0,00 €</strong></div>
+        <div class="cobro c-cash"><span class="cobro-head"><b>Efectivo</b><i class="badge b-physio">Fisioterapia</i></span><strong id="mCashPhysio">0,00 €</strong></div>
+        <div class="cobro cobro-total"><span>Total cobrado</span><strong id="mTotal">0,00 €</strong></div>
       </div>
 
       <div class="card">
@@ -132,15 +133,25 @@
       </div>
 
       <div class="card">
+        <div class="card-head">
+          <h2 class="card-title">Patologías</h2>
+          <div class="mini-seg" id="pathPeriod"><button data-p="month" class="on">Mes</button><button data-p="year">Año</button></div>
+        </div>
+        <div class="mini-seg mini-seg-wide" id="pathSort"><button data-s="count" class="on">Más frecuentes</button><button data-s="amount">Más ingresos</button></div>
+        <div id="pathStats"></div>
+      </div>
+
+      <div class="card">
         <h2 class="card-title">Día a día</h2>
         <div class="chart" id="dayChart"></div>
         <div class="split-legend"><span><i class="dot dot-in"></i>Ingresos</span><span><i class="dot dot-out"></i>Gastos</span></div>
       </div>
 
+      <p class="purge-note" id="purgeNote" hidden></p>
       <div class="export">
         <button class="btn btn-primary btn-block" id="pdfBtn">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg>
-          Descargar PDF para la asesoría
+          Descargar informe para la asesoría
         </button>
         <button class="btn btn-soft btn-block" id="shareBtn" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="17" cy="6" r="2.5"/><circle cx="7" cy="12" r="2.5"/><circle cx="17" cy="18" r="2.5"/><path d="m9.2 10.8 5.6-3.4m-5.6 5.8 5.6 3.4"/></svg>
@@ -186,7 +197,7 @@
 
       <div class="card">
         <h2 class="card-title">Privacidad</h2>
-        <p class="muted">La lectura de facturas se hace dentro del propio móvil: las fotos y PDF no se envían a ningún servidor. Los cálculos son orientativos y no sustituyen la revisión de la asesoría.</p>
+        <p class="muted">La lectura de facturas se hace dentro del propio móvil: las fotos y PDF no se envían a ningún servidor. Los justificantes se borran solos a los 4 meses de subirlos; antes se incluyen en el informe mensual. Los cálculos son orientativos y no sustituyen la revisión de la asesoría.</p>
         <button class="btn btn-danger-soft btn-block" id="wipeBtn">Borrar todos los datos</button>
       </div>
       <p class="version">FCSALUD · Control diario · v1.0</p>
@@ -253,10 +264,12 @@
       </label>
       <div class="presets" id="presets"></div>
 
-      <div class="field-row">
-        <label class="field income-only"><span>Nota (opcional)</span><input id="noteInput" placeholder="Ej. Sesiones de mañana" autocomplete="off"></label>
-        <label class="field field-date"><span>Fecha</span><input id="dateInput" type="date"></label>
+      <div class="income-only">
+        <label class="field"><span>Patología (opcional)</span><input id="noteInput" placeholder="Ej. Fascitis plantar" autocomplete="off" list="pathList" enterkeyhint="done"></label>
+        <datalist id="pathList"></datalist>
+        <div class="path-chips" id="pathChips"></div>
       </div>
+      <label class="field field-date"><span>Fecha</span><input id="dateInput" type="date"></label>
 
       <p class="form-error" id="formError" role="alert"></p>
       <button class="btn btn-primary btn-block btn-lg" id="saveBtn">Guardar</button>
