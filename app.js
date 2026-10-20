@@ -178,6 +178,8 @@ function renderResumen() {
   $('#mTpvPhysio').textContent = euro(t.tpv_physio);
   $('#mCashPodo').textContent = euro(t.cash_podo);
   $('#mCashPhysio').textContent = euro(t.cash_physio);
+  $('#mTotPodo').textContent = euro(t.podo);
+  $('#mTotPhysio').textContent = euro(t.physio);
   $('#mTotal').textContent = euro(t.income);
   renderPathStats();
   renderPurgeNote(list);
@@ -728,13 +730,15 @@ async function buildMonthlyPdf() {
   };
   [['TPV Podología', t.tpv_podo, [223, 242, 238]], ['TPV Fisioterapia', t.tpv_physio, [223, 242, 238]], ['Efectivo Podología', t.cash_podo, [251, 240, 217]], ['Efectivo Fisioterapia', t.cash_physio, [251, 240, 217]]]
     .forEach((m, i) => box(14 + i * 46, 49, 43, m[0], m[1], m[2]));
+  [['Total Podología', t.podo, [236, 228, 245]], ['Total Fisioterapia', t.physio, [226, 235, 246]]]
+    .forEach((m, i) => box(14 + i * 92, 69, 90, m[0], m[1], m[2]));
   [['Total cobrado', t.income, [82, 103, 89], true], ['Gastos', t.expense, [250, 231, 229]], ['Balance', t.balance, [228, 235, 230]]]
-    .forEach((m, i) => box(14 + i * 61.33, 69, 58.33, m[0], m[1], m[2], m[3]));
-  doc.setTextColor(36, 49, 42); doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.text('Gastos del mes', 14, 100);
+    .forEach((m, i) => box(14 + i * 61.33, 89, 58.33, m[0], m[1], m[2], m[3]));
+  doc.setTextColor(36, 49, 42); doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.text('Gastos del mes', 14, 120);
   let end;
   if (expenses.length) {
     doc.autoTable({
-      startY: 104, head: [['Fecha', 'Área', 'Proveedor o servicio', 'Factura', 'Importe']],
+      startY: 124, head: [['Fecha', 'Área', 'Proveedor o servicio', 'Factura', 'Importe']],
       body: expenses.map(m => [parseISO(m.date).toLocaleDateString('es-ES'), m.service, pdfSafe(m.party), m.docId ? 'Adjunta' : m.docPurged ? 'Borrada' : '-', pdfSafe(euro(m.total))]),
       foot: [[{ content: 'Total gastos', colSpan: 4 }, pdfSafe(euro(t.expense))]],
       theme: 'grid',
@@ -746,7 +750,7 @@ async function buildMonthlyPdf() {
     });
     end = doc.lastAutoTable.finalY + 9;
   } else {
-    doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(104, 120, 111); doc.text('No hay gastos registrados este mes.', 14, 110); end = 120;
+    doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(104, 120, 111); doc.text('No hay gastos registrados este mes.', 14, 130); end = 140;
   }
   if (end > 275) { doc.addPage(); end = 20; }
   doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(104, 120, 111);

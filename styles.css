@@ -174,7 +174,7 @@ main{padding:4px 18px calc(var(--tabbar) + var(--safe-b) + 36px);max-width:560px
 /* Cuadros de cobro por área (Resumen) */
 .cobro-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
 .cobro{background:var(--card);border-radius:var(--radius-sm);padding:13px 14px;box-shadow:var(--shadow);border-top:4px solid var(--c);text-align:left;display:flex;flex-direction:column;gap:8px}
-.cobro.c-tpv{--c:var(--tpv)}.cobro.c-cash{--c:var(--cash)}
+.cobro.c-tpv{--c:var(--tpv)}.cobro.c-cash{--c:var(--cash)}.cobro.c-podo{--c:var(--podo)}.cobro.c-physio{--c:var(--physio)}
 .cobro-head{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
 .cobro-head b{font-size:14px;font-weight:700;color:var(--muted)}
 .cobro-head .badge{font-style:normal;font-size:11px}
