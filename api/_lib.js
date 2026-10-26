@@ -18,6 +18,47 @@ export async function readJSON(path, fallback) {
 export async function writeJSON(path, value) {
   await writeFile(path, Buffer.from(JSON.stringify(value)), 'application/json');
 }
+// Lectura y escritura con control de versión (ETag): si otro dispositivo ha escrito
+// el archivo entre medias, la escritura falla con Conflict y se vuelve a intentar.
+export class Conflict extends Error {}
+export async function readJSONVersioned(path, fallback) {
+  if (localDir) {
+    const buf = await readFile(path);
+    if (!buf) return { value: fallback, etag: null };
+    try { return { value: JSON.parse(buf.toString('utf8')), etag: localEtag(buf) }; } catch { return { value: fallback, etag: localEtag(buf) }; }
+  }
+  const { get } = await blob();
+  const r = await get(path, { access: 'private', useCache: false });
+  if (!r || r.statusCode !== 200 || !r.stream) return { value: fallback, etag: null };
+  const buf = Buffer.from(await new Response(r.stream).arrayBuffer());
+  try { return { value: JSON.parse(buf.toString('utf8')), etag: r.blob.etag }; } catch { return { value: fallback, etag: r.blob.etag }; }
+}
+// etag null = el archivo no debe existir todavía.
+export async function writeJSONIf(path, value, etag) {
+  const body = Buffer.from(JSON.stringify(value));
+  if (localDir) {
+    // En pruebas locales, comprobar y escribir de una vez (Blob lo hace en el servidor).
+    const prev = localLocks.get(path) || Promise.resolve();
+    const run = prev.then(async () => {
+      const cur = await readFile(path);
+      if (etag ? !cur || localEtag(cur) !== etag : !!cur) throw new Conflict(path);
+      await writeFile(path, body, 'application/json');
+    });
+    localLocks.set(path, run.catch(() => {}));
+    return run;
+  }
+  const { put, BlobPreconditionFailedError } = await blob();
+  try {
+    await put(path, body, { access: 'private', contentType: 'application/json', addRandomSuffix: false, cacheControlMaxAge: 60, ...(etag ? { ifMatch: etag } : { allowOverwrite: false }) });
+  } catch (e) {
+    // ETag distinto, o el archivo ya existe cuando se esperaba crearlo.
+    if (e instanceof BlobPreconditionFailedError || /already exists|precondition/i.test(e?.message || '')) throw new Conflict(path);
+    throw e;
+  }
+}
+const localLocks = new Map();
+const localEtag = buf => crypto.createHash('sha1').update(buf).digest('hex');
+
 export async function readFile(path) {
   if (localDir) {
     const fs = await import('node:fs/promises');

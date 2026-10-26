@@ -914,6 +914,7 @@ async function getDoc(id) {
 }
 const cloud = (() => {
   const KEY = 'fcsalud:pending';
+  const VERSION_KEY = 'fcsalud:dataVersion';   // versión de la nube que ya tiene este móvil
   const enabled = /^https?:$/.test(location.protocol);
   let pending = { up: new Set(), del: new Set(), docs: new Set(), docDel: new Set(), projects: new Set() };
   try { const p = JSON.parse(localStorage.getItem(KEY) || '{}'); for (const k in pending) pending[k] = new Set(p[k] || []); } catch (e) {}
@@ -971,7 +972,7 @@ const cloud = (() => {
         // Sin cambios propios solo se descarga (así se gastan menos operaciones del plan gratuito).
         const r = changed
           ? await fetch('/api/data', { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' }, credentials: 'same-origin' })
-          : await fetch('/api/data', { credentials: 'same-origin', cache: 'no-store' });
+          : await fetch('/api/data', { credentials: 'same-origin', cache: 'no-store', headers: { 'x-data-version': moves.length ? localStorage.getItem(VERSION_KEY) || '' : '' } });
         if (!r.ok) throw r;
         const data = await r.json();
         body.upsert.forEach(m => { const cur = moves.find(x => x.id === m.id); if (cur === m) pending.up.delete(m.id); });
@@ -979,7 +980,8 @@ const cloud = (() => {
         body.deleteDocs.forEach(id => pending.docDel.delete(id));
         if (body.projects) pending.projects.clear();
         save();
-        await applyServer(data);
+        if (!data.unchanged) await applyServer(data);
+        if (data.updatedAt) localStorage.setItem(VERSION_KEY, String(data.updatedAt));
         localStorage.setItem('fcsalud:lastSync', String(Date.now()));
         status = 'ok';
       } catch (e) {
@@ -994,6 +996,7 @@ const cloud = (() => {
       await store.clear('moves'); await store.clear('docs'); moves = [];
       for (const k in pending) pending[k].clear();
       save();
+      localStorage.removeItem(VERSION_KEY);
       if (!c.authed) { settings.cloudInit = false; saveSettings(); }
     }
   };

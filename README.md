@@ -18,7 +18,11 @@ Todo (movimientos, proyectos y facturas) se guarda en un almacén **privado de V
 
 - Variables de entorno en Vercel: `APP_PASSWORD` (contraseña inicial), `SESSION_SECRET` (firma de la sesión) y `BLOB_READ_WRITE_TOKEN` (la crea Vercel al conectar el almacén).
 - La contraseña se puede cambiar desde Ajustes; entonces se guarda cifrada (scrypt) en `config/auth.json` y `APP_PASSWORD` deja de usarse.
-- Funciones en `/api`: `login`, `password`, `data` (un único `data/fcsalud.json`) y `doc` (facturas en `docs/{id}`, máx. 4 MB). Las fotos se comprimen en el móvil antes de subirlas.
+- Funciones en `/api`: `login`, `password`, `data` y `doc` (facturas en `docs/{id}`, máx. 4 MB). Las fotos se comprimen en el móvil antes de subirlas.
+- Los movimientos se reparten por año (`data/moves/2026.json`…) y `data/meta.json` guarda la lista de años, los borrados, los proyectos y la versión. El antiguo `data/fcsalud.json` se pasa solo a este formato la primera vez y se conserva como copia.
+- Cada escritura comprueba la versión (ETag) del archivo: si dos móviles guardan a la vez, el segundo vuelve a leer y aplica sus cambios, así no se pierde ninguno.
+- Si el móvil ya tiene la última versión, la sincronización solo lee `meta.json` (menos operaciones del plan gratuito).
+- Copia de seguridad automática semanal de los movimientos en `backups/` (se guardan las 8 últimas; las facturas no se incluyen).
 - Para probar en local sin Vercel: `FC_LOCAL_STORE=./store` guarda en una carpeta.
 
 ## Cómo probarla
