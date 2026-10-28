@@ -25,17 +25,24 @@ export async function readJSONVersioned(path, fallback) {
   if (localDir) {
     const buf = await readFile(path);
     if (!buf) return { value: fallback, etag: null };
-    try { return { value: JSON.parse(buf.toString('utf8')), etag: localEtag(buf) }; } catch { return { value: fallback, etag: localEtag(buf) }; }
+    try { return { value: JSON.parse(buf.toString('utf8')), etag: localEtag(buf) }; } catch { throw new Error(`JSON dañado en ${path}`); }
   }
-  const { get } = await blob();
+  const { get, head, BlobNotFoundError } = await blob();
+  // El ETag se pide a la API (head) antes de leer: es el formato que espera ifMatch.
+  // Si el archivo cambia entre medias, el ETag es el antiguo y la escritura se repite.
+  let etag = null;
+  try { etag = (await head(path)).etag || null; } catch (e) { if (!(e instanceof BlobNotFoundError)) console.error('head', path, e?.message); }
   const r = await get(path, { access: 'private', useCache: false });
   if (!r || r.statusCode !== 200 || !r.stream) return { value: fallback, etag: null };
+  etag = etag || r.blob.etag || null;
   const buf = Buffer.from(await new Response(r.stream).arrayBuffer());
-  try { return { value: JSON.parse(buf.toString('utf8')), etag: r.blob.etag }; } catch { return { value: fallback, etag: r.blob.etag }; }
+  try { return { value: JSON.parse(buf.toString('utf8')), etag }; } catch { throw new Error(`JSON dañado en ${path}`); }
 }
-// etag null = el archivo no debe existir todavía.
-export async function writeJSONIf(path, value, etag) {
+// etag null = el archivo no debe existir todavía. force = escribir sin comprobar
+// (último recurso para no perder nunca un guardado).
+export async function writeJSONIf(path, value, etag, force = false) {
   const body = Buffer.from(JSON.stringify(value));
+  if (force) return writeFile(path, body, 'application/json');
   if (localDir) {
     // En pruebas locales, comprobar y escribir de una vez (Blob lo hace en el servidor).
     const prev = localLocks.get(path) || Promise.resolve();
@@ -53,6 +60,8 @@ export async function writeJSONIf(path, value, etag) {
   } catch (e) {
     // ETag distinto, o el archivo ya existe cuando se esperaba crearlo.
     if (e instanceof BlobPreconditionFailedError || /already exists|precondition/i.test(e?.message || '')) throw new Conflict(path);
+    console.error('put condicional', path, e?.name, e?.message);
+    if (etag) throw new Conflict(path);   // se reintenta y, al final, se guarda sin comprobar
     throw e;
   }
 }
@@ -84,7 +93,8 @@ export async function writeFile(path, body, contentType) {
   if (localDir) {
     const fs = await import('node:fs/promises');
     await fs.mkdir(localDir, { recursive: true });
-    await fs.writeFile(`${localDir}/${encodeURIComponent(path)}`, body);
+    const file = `${localDir}/${encodeURIComponent(path)}`, tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+    await fs.writeFile(tmp, body); await fs.rename(tmp, file);
     if (!path.endsWith('.meta')) await fs.writeFile(`${localDir}/${encodeURIComponent(path + '.meta')}`, JSON.stringify({ contentType }));
     return;
   }

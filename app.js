@@ -920,6 +920,7 @@ const cloud = (() => {
   try { const p = JSON.parse(localStorage.getItem(KEY) || '{}'); for (const k in pending) pending[k] = new Set(p[k] || []); } catch (e) {}
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(Object.entries(pending).map(([k, v]) => [k, [...v]])))); } catch (e) {} };
   let timer = null, busy = false, again = false, status = 'idle';
+  let fullNext = true;   // al abrir la app se descarga todo una vez, por si acaso
   const c = {
     enabled, authed: false,
     get lastSync() { return +(localStorage.getItem('fcsalud:lastSync') || 0); },
@@ -972,7 +973,7 @@ const cloud = (() => {
         // Sin cambios propios solo se descarga (así se gastan menos operaciones del plan gratuito).
         const r = changed
           ? await fetch('/api/data', { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' }, credentials: 'same-origin' })
-          : await fetch('/api/data', { credentials: 'same-origin', cache: 'no-store', headers: { 'x-data-version': moves.length ? localStorage.getItem(VERSION_KEY) || '' : '' } });
+          : await fetch('/api/data', { credentials: 'same-origin', cache: 'no-store', headers: { 'x-data-version': moves.length && !fullNext ? localStorage.getItem(VERSION_KEY) || '' : '' } });
         if (!r.ok) throw r;
         const data = await r.json();
         body.upsert.forEach(m => { const cur = moves.find(x => x.id === m.id); if (cur === m) pending.up.delete(m.id); });
@@ -981,6 +982,7 @@ const cloud = (() => {
         if (body.projects) pending.projects.clear();
         save();
         if (!data.unchanged) await applyServer(data);
+        fullNext = false;
         if (data.updatedAt) localStorage.setItem(VERSION_KEY, String(data.updatedAt));
         localStorage.setItem('fcsalud:lastSync', String(Date.now()));
         status = 'ok';
