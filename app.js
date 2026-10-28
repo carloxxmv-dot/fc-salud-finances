@@ -888,9 +888,10 @@ $('#importInput').onchange = async e => {
   } catch (err) { toast('Ese archivo no es una copia de FCSALUD'); }
 };
 $('#wipeBtn').onclick = async () => {
+  if (cloud.authed && cloud.pendingCount()) await cloud.syncNow();   // antes de vaciar, intentar subir lo pendiente
   const pend = cloud.pendingCount();
   if (!confirm(cloud.authed
-    ? (pend ? `Hay ${pend} cambios sin subir que se perderán. ` : '') + '¿Vaciar este dispositivo? Los datos guardados en la nube no se tocan y se volverán a descargar.'
+    ? (pend ? `⚠️ ATENCIÓN: hay ${pend} cambios que NO están en la nube y se perderán para siempre.\n\n` : '') + '¿Vaciar este dispositivo? Los datos guardados en la nube no se tocan y se volverán a descargar.'
     : '¿Borrar todos los movimientos y justificantes de este dispositivo? No se puede deshacer.')) return;
   await cloud.clearLocal();
   render(); toast('Dispositivo vaciado');
@@ -918,14 +919,22 @@ const cloud = (() => {
   const enabled = /^https?:$/.test(location.protocol);
   let pending = { up: new Set(), del: new Set(), docs: new Set(), docDel: new Set(), projects: new Set() };
   try { const p = JSON.parse(localStorage.getItem(KEY) || '{}'); for (const k in pending) pending[k] = new Set(p[k] || []); } catch (e) {}
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(Object.entries(pending).map(([k, v]) => [k, [...v]])))); } catch (e) {} };
+  const save = () => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(Object.entries(pending).map(([k, v]) => [k, [...v]]))));
+      if (Object.values(pending).some(v => v.size) && !localStorage.getItem('fcsalud:pendingSince')) localStorage.setItem('fcsalud:pendingSince', String(Date.now()));
+    } catch (e) {}
+  };
   let timer = null, busy = false, again = false, status = 'idle';
   let fullNext = true;   // al abrir la app se descarga todo una vez, por si acaso
+  let failures = 0, retry = null;
+  const SINCE_KEY = 'fcsalud:pendingSince';   // desde cuándo hay cambios sin subir
   const c = {
     enabled, authed: false,
     get lastSync() { return +(localStorage.getItem('fcsalud:lastSync') || 0); },
     pendingCount: () => pending.up.size + pending.del.size + pending.docs.size + pending.docDel.size + pending.projects.size,
     mark(kind, id) { pending[kind].add(id); if (kind === 'up') pending.del.delete(id); save(); c.schedule(); },
+    get pendingSince() { return +(localStorage.getItem(SINCE_KEY) || 0); },
     unmark(kind, id) { pending[kind].delete(id); save(); },
     schedule(ms = 2000) { if (!enabled) return; clearTimeout(timer); timer = setTimeout(() => c.syncNow(), ms); ui(); },
     async start() {
@@ -990,12 +999,16 @@ const cloud = (() => {
         if (e && e.status === 401) { c.authed = false; status = 'idle'; showLogin(); }
         else status = navigator.onLine === false || e instanceof TypeError ? 'offline' : 'error';
       } finally {
-        busy = false; ui();
+        busy = false;
+        if (status === 'ok' && !c.pendingCount()) { failures = 0; localStorage.removeItem(SINCE_KEY); }
+        else if (c.authed) { failures++; clearTimeout(retry); retry = setTimeout(() => c.syncNow(), Math.min(300, 15 * 2 ** Math.min(failures, 5)) * 1000); }
+        ui();
         if (again) { again = false; c.schedule(300); }
       }
     },
     async clearLocal() {
       await store.clear('moves'); await store.clear('docs'); moves = [];
+      localStorage.removeItem(SINCE_KEY);
       for (const k in pending) pending[k].clear();
       save();
       localStorage.removeItem(VERSION_KEY);
@@ -1005,13 +1018,23 @@ const cloud = (() => {
   async function applyServer(data) {
     const server = new Map((data.moves || []).map(m => [m.id, m]));
     const local = new Map(moves.map(m => [m.id, m]));
+    const deleted = data.deleted || {};
     const next = [];
     for (const [id, m] of server) {
       if (pending.del.has(id)) continue;
       const l = local.get(id);
       next.push(l && pending.up.has(id) && (l.updatedAt || 0) >= (m.updatedAt || 0) ? l : m);
     }
-    for (const [id, l] of local) if (!server.has(id) && pending.up.has(id)) next.push(l);
+    // Un movimiento de este móvil solo se quita si la nube dice expresamente que se borró.
+    // Si simplemente no está en la nube, se conserva y se vuelve a subir.
+    let reupload = 0;
+    for (const [id, l] of local) {
+      if (server.has(id)) continue;
+      if (pending.up.has(id)) { next.push(l); continue; }
+      if (deleted[id] && deleted[id] >= (l.updatedAt || 0)) continue;
+      next.push(l); pending.up.add(id); if (l.docId) pending.docs.add(l.docId); reupload++;
+    }
+    if (reupload) { save(); c.schedule(500); }
     const keep = new Set(next.map(m => m.id));
     for (const m of moves) if (!keep.has(m.id)) { await store.del('moves', m.id); if (m.docId) await store.del('docs', m.docId).catch(() => {}); }
     const changed = next.filter(m => local.get(m.id) !== m);
@@ -1035,6 +1058,14 @@ const cloud = (() => {
       : n ? `${n} cambios pendientes de subir.` : `Todo guardado en la nube${ago ? ' · ' + ago : ''}.`;
     b.setAttribute('aria-label', text); b.title = text;
     $('#cloudStatus').textContent = text;
+    // Aviso bien visible si hay cambios que solo están en este móvil desde hace más de 2 minutos
+    // o si la nube ha dado error.
+    const stuck = enabled && n && (status === 'error' || (c.pendingSince && Date.now() - c.pendingSince > 120000));
+    const w = $('#syncWarn');
+    w.hidden = !stuck;
+    if (stuck) $('#syncWarnText').textContent = !c.authed ? `${n} cambios solo están en este móvil. Inicia sesión para guardarlos en la nube.`
+      : status === 'offline' ? `Sin conexión: ${n} cambios solo están en este móvil. Se subirán al volver internet.`
+      : `No se han podido guardar ${n} cambios en la nube. Siguen en este móvil: no cierres sesión ni lo vacíes.`;
     $('#logoutBtn').hidden = !c.authed;
     $('#pwBtn').disabled = !c.authed;
   }
@@ -1067,10 +1098,13 @@ $('#loginForm').addEventListener('submit', async e => {
   finally { btn.disabled = false; btn.textContent = 'Entrar'; }
 });
 $('#syncBtn').onclick = () => { go('ajustes'); cloud.syncNow(); };
+$('#syncWarnBtn').onclick = () => cloud.authed ? cloud.syncNow() : showLogin();
+setInterval(() => { if (cloud.authed && cloud.pendingCount()) cloud.syncNow(); }, 60000);
 $('#syncNowBtn').onclick = () => cloud.authed ? cloud.syncNow() : showLogin();
 $('#logoutBtn').onclick = async () => {
+  if (cloud.pendingCount()) await cloud.syncNow();   // antes de cerrar sesión, intentar subir lo pendiente
   const n = cloud.pendingCount();
-  if (!confirm((n ? `Hay ${n} cambios sin subir que se perderán. ` : '') + '¿Cerrar sesión? Se borrarán los datos de este dispositivo; en la nube siguen guardados.')) return;
+  if (!confirm((n ? `⚠️ ATENCIÓN: hay ${n} cambios que NO están en la nube y se perderán para siempre.\n\n` : '') + '¿Cerrar sesión? Se borrarán los datos de este dispositivo; en la nube siguen guardados.')) return;
   try { await fetch('/api/login', { method: 'DELETE', credentials: 'same-origin' }); } catch (e) {}
   cloud.authed = false;
   await cloud.clearLocal();
