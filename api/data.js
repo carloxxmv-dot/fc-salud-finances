@@ -33,17 +33,20 @@ export async function POST(request) {
   try { body = await request.json(); } catch { return json({ error: 'json' }, 400); }
   for (let attempt = 0; ; attempt++) {
     try {
-      const { data, docsToRemove } = await applyChanges(body);
+      // Si tras varios intentos sigue habiendo conflicto, el último guarda sin comprobar versión
+      // (como antes de usar ETag): los cambios ya están mezclados con lo último leído.
+      const { data, docsToRemove } = await applyChanges(body, attempt >= 4);
       for (const id of new Set(docsToRemove)) if (/^[a-z0-9]+$/i.test(id)) await removeFile(`docs/${id}`).catch(() => {});
       return json(data);
     } catch (e) {
-      if (!(e instanceof Conflict) || attempt >= 6) throw e;
+      if (!(e instanceof Conflict) || attempt >= 4) throw e;
+      console.error('conflicto al guardar, reintento', attempt + 1, e.message);
       await wait(80 + Math.random() * 200 * (attempt + 1));
     }
   }
 }
 
-async function applyChanges(body) {
+async function applyChanges(body, force = false) {
   const meta = await loadMeta();
   const m = meta.value;
   const years = await loadYears(m.years);
@@ -91,7 +94,7 @@ async function applyChanges(body) {
   for (const [id, at] of Object.entries(m.deleted)) if (at < cutoff) delete m.deleted[id];
 
   // Primero los años y al final meta.json, que hace de "versión" de todo el conjunto.
-  for (const y of dirty) await writeJSONIf(yearPath(y), years.get(y).value, years.get(y).etag);
+  for (const y of dirty) await writeJSONIf(yearPath(y), years.get(y).value, years.get(y).etag, force);
   m.years = [...years.keys()].sort();
   m.updatedAt = Date.now();
   const data = publicData(m, years);
@@ -104,7 +107,7 @@ async function applyChanges(body) {
     m.backups = [...(m.backups || []).filter(b => b !== name), name];
     oldBackups = m.backups.splice(0, Math.max(0, m.backups.length - BACKUPS_KEPT));
   }
-  await writeJSONIf(META, m, meta.etag);
+  await writeJSONIf(META, m, meta.etag, force);
   for (const b of oldBackups) await removeFile(b).catch(() => {});
   return { data, docsToRemove };
 }
