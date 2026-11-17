@@ -873,8 +873,21 @@ $('#defaultArea').addEventListener('click', e => { const b = e.target.closest('b
 const BOX_ICON = '<svg viewBox="0 0 24 24"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>';
 const areaCls = a => AREAS[a] || '';
 const isLow = p => (p.qty || 0) < (p.min || 0);
-const suggestedOrder = p => Math.max(1, 2 * (p.min || 0) - (p.qty || 0));
+// Envases: qty siempre son unidades; pack ('caja'/'paquete') y perPack dicen cómo viene.
+const hasPack = p => !!p.pack && p.perPack > 0;
+const packWord = (pack, n) => (pack || 'unidad') === 'unidad' ? (n === 1 ? 'ud' : 'uds') : n === 1 ? pack : pack + 's';
+// «3 cajas + 20 sueltas» (o «3 cajas» si no hay sueltas)
+function packsText(p) {
+  if (!hasPack(p)) return '';
+  const q = p.qty || 0, n = Math.floor(q / p.perPack), r = q % p.perPack;
+  return `${n} ${packWord(p.pack, n)}${r ? ` + ${r} suelta${r === 1 ? '' : 's'}` : ''}`;
+}
+const suggestedUnits = p => Math.max(1, 2 * (p.min || 0) - (p.qty || 0));
+// Lo que se pide va en cajas/paquetes si el producto viene así; si no, en unidades.
+const suggestedOrder = p => hasPack(p) ? Math.max(1, Math.ceil(suggestedUnits(p) / p.perPack)) : suggestedUnits(p);
 const orderQtyOf = p => p.orderQty > 0 ? p.orderQty : suggestedOrder(p);
+const orderUnits = p => orderQtyOf(p) * (hasPack(p) ? p.perPack : 1);
+const orderText = p => hasPack(p) ? `${orderQtyOf(p)} ${packWord(p.pack, orderQtyOf(p))} de ${p.perPack} uds` : `${orderQtyOf(p)} uds`;
 const inOrder = p => p.inList || isLow(p);
 const sortByName = (a, b) => a.name.localeCompare(b.name, 'es');
 
@@ -999,7 +1012,7 @@ function renderStock() {
   }
   grid.innerHTML = list.map(p => `<button class="s-card" data-product="${esc(p.id)}">
       <span class="s-img ${areaCls(p.area)}" ${p.photoId ? `data-photo="${esc(p.photoId)}"` : ''}>${BOX_ICON}</span>
-      <span class="s-body"><strong>${esc(p.name)}</strong><span class="s-qty ${isLow(p) ? 'low' : ''}">${p.qty || 0}</span></span>
+      <span class="s-body"><span class="s-txt"><strong>${esc(p.name)}</strong>${hasPack(p) ? `<small>${packsText(p)}</small>` : ''}</span><span class="s-qty ${isLow(p) ? 'low' : ''}">${p.qty || 0}</span></span>
     </button>`).join('');
   fillPhotos(grid);
 }
@@ -1037,6 +1050,14 @@ function fillProductSheet() {
   $('#pQty').textContent = p.qty || 0;
   $('#pQty').classList.toggle('low', isLow(p));
   $('#pMin').textContent = `Mínimo: ${p.min || 0}`;
+  $('#pPacksRow').hidden = !hasPack(p);
+  if (hasPack(p)) {
+    const w = p.pack === 'caja' ? 'Cajas' : 'Paquetes';
+    $('#pPacksLabel').textContent = `${w} de ${p.perPack} uds`;
+    $('#pPacks').textContent = packsText(p);
+    $('#pPackDec').setAttribute('aria-label', `Quitar ${p.pack === 'caja' ? 'una caja' : 'un paquete'}`);
+    $('#pPackInc').setAttribute('aria-label', `Añadir ${p.pack === 'caja' ? 'una caja' : 'un paquete'}`);
+  }
   const b = $('#pList');
   b.classList.toggle('in', !!p.inList);
   b.textContent = p.inList ? '✓ En la lista de pedido' : isLow(p) ? 'Bajo mínimo: ya está en la lista' : 'Añadir a la lista de pedido';
@@ -1058,6 +1079,9 @@ async function changeQty(delta) {
 }
 $('#pDec').onclick = () => changeQty(-1);
 $('#pInc').onclick = () => changeQty(1);
+const packStep = sign => { const p = products.find(x => x.id === currentProduct); if (p && hasPack(p)) changeQty(sign * p.perPack); };
+$('#pPackDec').onclick = () => packStep(-1);
+$('#pPackInc').onclick = () => packStep(1);
 $('#pList').onclick = async () => {
   const p = products.find(x => x.id === currentProduct); if (!p) return;
   await saveProduct({ ...p, inList: !p.inList, ordered: false });
@@ -1081,7 +1105,7 @@ function refreshProductSheets() {
 }
 
 /* Nuevo / editar producto */
-const pform = { id: null, area: 'Podología', photo: null, photoId: null };
+const pform = { id: null, area: 'Podología', pack: '', photo: null, photoId: null };
 function fillProductForm(p) {
   pform.id = p?.id || null;
   pform.area = p?.area || (settings.area === 'Fisioterapia' ? 'Fisioterapia' : 'Podología');
@@ -1089,12 +1113,16 @@ function fillProductForm(p) {
   pform.photoId = p?.photoId || null;
   $('#pfTitle').textContent = p ? 'Editar producto' : 'Nuevo producto';
   $('#pfName').value = p?.name || '';
-  $('#pfQty').value = p ? (p.qty || 0) : '';
+  pform.pack = p && hasPack(p) ? p.pack : '';
+  $('#pfPer').value = p && hasPack(p) ? p.perPack : '';
+  if (p && hasPack(p)) { $('#pfPacks').value = Math.floor((p.qty || 0) / p.perPack); $('#pfQty').value = (p.qty || 0) % p.perPack; }
+  else { $('#pfPacks').value = ''; $('#pfQty').value = p ? (p.qty || 0) : ''; }
   $('#pfMin').value = p ? (p.min || 0) : '';
   $('#pfSupplier').value = p?.supplier || '';
   $('#pfError').textContent = '';
   $('#supplierList').innerHTML = [...new Set(products.map(x => x.supplier).filter(Boolean))].map(x => `<option value="${esc(x)}">`).join('');
   $$('#pfArea button').forEach(b => b.classList.toggle('on', b.dataset.v === pform.area));
+  showPackFields();
   showFormPhoto();
 }
 let formPhotoUrl = null;
@@ -1112,6 +1140,34 @@ async function showFormPhoto() {
   if (url) { const img = document.createElement('img'); img.src = url; img.alt = ''; box.prepend(img); }
 }
 function openProductForm(p) { fillProductForm(p); showSheet('productForm'); setTimeout(() => { if (!p) $('#pfName').focus(); }, 350); }
+function formQty() {
+  const per = intOf($('#pfPer').value);
+  return pform.pack && per > 0 ? intOf($('#pfPacks').value) * per + intOf($('#pfQty').value) : intOf($('#pfQty').value);
+}
+function showPackFields() {
+  const pk = pform.pack, per = intOf($('#pfPer').value);
+  $$('#pfPack button').forEach(b => b.classList.toggle('on', b.dataset.v === pk));
+  $('#pfPackNums').hidden = !pk;
+  const W = pk === 'caja' ? 'Cajas' : 'Paquetes', w = pk === 'caja' ? 'caja' : 'paquete';
+  $('#pfPacksLabel').textContent = `${W} que hay`;
+  $('#pfPerLabel').textContent = `Unidades por ${w}`;
+  $('#pfQtyLabel').textContent = pk ? 'Unidades sueltas' : 'Unidades que hay';
+  const t = $('#pfTotal');
+  t.hidden = !(pk && per > 0);
+  if (!t.hidden) { const n = intOf($('#pfPacks').value), r = intOf($('#pfQty').value); t.textContent = `Total: ${n} ${packWord(pk, n)} × ${per} + ${r} sueltas = ${n * per + r} unidades`; }
+}
+$('#pfPack').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const before = formQty();
+  pform.pack = b.dataset.v;
+  // Al cambiar la forma, se conservan las unidades totales.
+  const per = intOf($('#pfPer').value);
+  if (pform.pack && per > 0) { $('#pfPacks').value = Math.floor(before / per); $('#pfQty').value = before % per; }
+  else if (!pform.pack) { $('#pfPacks').value = ''; $('#pfQty').value = before || ''; }
+  showPackFields();
+  if (pform.pack && !per) $('#pfPer').focus();
+});
+['#pfPacks', '#pfPer', '#pfQty'].forEach(id => $(id).addEventListener('input', showPackFields));
 $('#pfArea').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   pform.area = b.dataset.v;
@@ -1142,9 +1198,13 @@ $('#pfSave').onclick = async () => {
   const p = {
     ...(prev || { id: uid(), createdAt: Date.now(), inList: false }),
     name, area: pform.area,
-    qty: intOf($('#pfQty').value), min: intOf($('#pfMin').value),
+    qty: formQty(), min: intOf($('#pfMin').value),
     supplier: $('#pfSupplier').value.trim()
   };
+  const per = intOf($('#pfPer').value);
+  if (pform.pack && !per) { $('#pfError').textContent = `Indica cuántas unidades trae cada ${pform.pack}`; $('#pfPer').focus(); return; }
+  p.pack = pform.pack || null; p.perPack = pform.pack ? per : null;
+  if (prev && (prev.pack !== p.pack || prev.perPack !== p.perPack)) p.orderQty = null;
   if (pform.photo) {
     const photoId = uid();
     await store.put('photos', { id: photoId, blob: pform.photo, type: pform.photo.type || 'image/jpeg' });
@@ -1168,8 +1228,8 @@ function renderOrder() {
   $('#orderList').innerHTML = list.map(p => `<div class="o-item ${p.ordered ? 'done' : ''}" data-id="${esc(p.id)}">
       <button class="o-check" data-act="check" aria-label="${p.ordered ? 'Desmarcar' : 'Marcar como pedido'}">${p.ordered ? '<svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg>' : ''}</button>
       <span class="o-thumb ${areaCls(p.area)}" ${p.photoId ? `data-photo="${esc(p.photoId)}"` : ''}>${BOX_ICON}</span>
-      <span class="o-info"><strong>${esc(p.name)}</strong><small class="${isLow(p) ? 'low' : ''}">Quedan ${p.qty || 0} · mín. ${p.min || 0}${p.supplier ? ' · ' + esc(p.supplier) : ''}</small></span>
-      <label class="o-qty"><span>Pedir</span><input type="number" inputmode="numeric" min="1" value="${orderQtyOf(p)}" data-act="qty" aria-label="Unidades a pedir"></label>
+      <span class="o-info"><strong>${esc(p.name)}</strong><small class="${isLow(p) ? 'low' : ''}">Quedan ${p.qty || 0}${hasPack(p) ? ` (${packsText(p)})` : ''} · mín. ${p.min || 0}${p.supplier ? ' · ' + esc(p.supplier) : ''}</small></span>
+      <label class="o-qty"><span>Pedir</span><input type="number" inputmode="numeric" min="1" value="${orderQtyOf(p)}" data-act="qty" aria-label="${hasPack(p) ? (p.pack === 'caja' ? 'Cajas' : 'Paquetes') : 'Unidades'} a pedir"><small>${hasPack(p) ? packWord(p.pack, 2) : 'uds'}</small></label>
       ${p.inList && !isLow(p) ? '<button class="o-remove" data-act="remove" aria-label="Quitar de la lista"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>' : ''}
     </div>`).join('');
   fillPhotos($('#orderList'));
@@ -1193,7 +1253,7 @@ $('#orderSend').onclick = async () => {
   const groups = {};
   for (const p of list) (groups[p.supplier || 'Sin proveedor'] ||= []).push(p);
   const text = `Pedido Clínica FC Salud · ${new Date().toLocaleDateString('es-ES')}\n` +
-    Object.entries(groups).map(([sup, ps]) => `\n${sup}:\n` + ps.sort(sortByName).map(p => `• ${p.name}: ${orderQtyOf(p)} uds`).join('\n')).join('\n');
+    Object.entries(groups).map(([sup, ps]) => `\n${sup}:\n` + ps.sort(sortByName).map(p => `• ${p.name}: ${orderText(p)}`).join('\n')).join('\n');
   try {
     if (navigator.share) { await navigator.share({ text }); return; }
   } catch (e) { if (e && e.name === 'AbortError') return; }
@@ -1204,8 +1264,8 @@ $('#orderArrived').onclick = async () => {
   const marked = list.filter(p => p.ordered);
   const target = marked.length ? marked : list;
   if (!target.length) return;
-  if (!confirm(`¿Sumar al stock lo pedido de ${target.length} producto${target.length > 1 ? 's' : ''}?\n\n` + target.map(p => `• ${p.name}: +${orderQtyOf(p)}`).join('\n'))) return;
-  for (const p of target) await saveProduct({ ...p, qty: (p.qty || 0) + orderQtyOf(p), inList: false, ordered: false, orderQty: null });
+  if (!confirm(`¿Sumar al stock lo pedido de ${target.length} producto${target.length > 1 ? 's' : ''}?\n\n` + target.map(p => `• ${p.name}: +${hasPack(p) ? `${orderText(p)} (${orderUnits(p)} uds)` : orderUnits(p)}`).join('\n'))) return;
+  for (const p of target) await saveProduct({ ...p, qty: (p.qty || 0) + orderUnits(p), inList: false, ordered: false, orderQty: null });
   renderOrder(); render();
   toast('✓ Stock actualizado');
 };

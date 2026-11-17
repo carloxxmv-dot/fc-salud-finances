@@ -346,6 +346,11 @@
         <button class="p-step" id="pDec" aria-label="Quitar una unidad">−</button>
         <button class="p-step" id="pInc" aria-label="Añadir una unidad">+</button>
       </div>
+      <div class="p-units p-packs" id="pPacksRow" hidden>
+        <div><span id="pPacksLabel">Cajas</span><b id="pPacks"></b></div>
+        <button class="p-step" id="pPackDec" aria-label="Quitar una caja">−</button>
+        <button class="p-step" id="pPackInc" aria-label="Añadir una caja">+</button>
+      </div>
       <button class="btn btn-block btn-lg" id="pList"></button>
       <div class="btn-row">
         <button class="btn btn-soft" id="pEdit">Editar</button>
@@ -382,10 +387,22 @@
           <button data-v="Ambas" class="seg-any">Ambas</button>
         </div>
       </div>
-      <div class="pf-nums">
-        <label class="field"><span>Unidades que hay</span><input id="pfQty" type="number" inputmode="numeric" min="0" step="1" placeholder="0"></label>
-        <label class="field"><span>Avisar por debajo de</span><input id="pfMin" type="number" inputmode="numeric" min="0" step="1" placeholder="0"></label>
+      <div class="field"><span>Cómo viene</span>
+        <div class="segmented seg3" id="pfPack">
+          <button data-v="" class="seg-any">Unidades</button>
+          <button data-v="caja" class="seg-any">En cajas</button>
+          <button data-v="paquete" class="seg-any">En paquetes</button>
+        </div>
       </div>
+      <div class="pf-nums" id="pfPackNums" hidden>
+        <label class="field"><span id="pfPacksLabel">Cajas que hay</span><input id="pfPacks" type="number" inputmode="numeric" min="0" step="1" placeholder="0"></label>
+        <label class="field"><span id="pfPerLabel">Unidades por caja</span><input id="pfPer" type="number" inputmode="numeric" min="1" step="1" placeholder="Ej. 100"></label>
+      </div>
+      <div class="pf-nums">
+        <label class="field"><span id="pfQtyLabel">Unidades que hay</span><input id="pfQty" type="number" inputmode="numeric" min="0" step="1" placeholder="0"></label>
+        <label class="field"><span>Avisar por debajo de (uds)</span><input id="pfMin" type="number" inputmode="numeric" min="0" step="1" placeholder="0"></label>
+      </div>
+      <p class="pf-total" id="pfTotal" hidden></p>
       <label class="field"><span>Proveedor (opcional)</span><input id="pfSupplier" placeholder="Ej. tu distribuidor habitual" autocomplete="off" maxlength="80" list="supplierList"></label>
       <datalist id="supplierList"></datalist>
       <p class="form-error" id="pfError" role="alert"></p>
