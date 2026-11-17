@@ -63,11 +63,13 @@ const db = {
   _db: null,
   open() {
     return new Promise((ok, no) => {
-      const r = indexedDB.open('fcsalud', 1);
+      const r = indexedDB.open('fcsalud', 2);
       r.onupgradeneeded = () => {
         const d = r.result;
         if (!d.objectStoreNames.contains('moves')) d.createObjectStore('moves', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('docs')) d.createObjectStore('docs', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('products')) d.createObjectStore('products', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('photos')) d.createObjectStore('photos', { keyPath: 'id' });
       };
       r.onsuccess = () => { this._db = r.result; ok(); };
       r.onerror = () => no(r.error);
@@ -89,7 +91,7 @@ const db = {
   putMany(store, list) { return this.tx(store, 'readwrite', s => { list.forEach(v => s.put(v)); }); }
 };
 // Si IndexedDB no está disponible (modo privado antiguo), se trabaja en memoria.
-const memory = { moves: new Map(), docs: new Map() };
+const memory = { moves: new Map(), docs: new Map(), products: new Map(), photos: new Map() };
 let useMemory = false;
 const store = {
   all: s => useMemory ? Promise.resolve([...memory[s].values()]) : db.all(s),
@@ -102,7 +104,8 @@ const store = {
 
 /* ---------- Estado ---------- */
 let moves = [];
-const state = { view: 'hoy', day: todayISO(), month: monthOf(todayISO()), filter: 'all', query: '' };
+let products = [];
+const state = { view: 'hoy', day: todayISO(), month: monthOf(todayISO()), filter: 'all', query: '', stockFilter: 'all', stockQuery: '' };
 const projectMoves = () => moves.filter(m => (m.project || 'Clínica FC Salud') === settings.project);
 
 function totals(list) {
@@ -265,6 +268,8 @@ function render() {
   if (state.view === 'hoy') renderHoy();
   if (state.view === 'historial') renderHist();
   if (state.view === 'resumen') renderResumen();
+  if (state.view === 'stock') renderStock();
+  renderOrderDot();
 }
 
 /* ---------- Navegación ---------- */
@@ -455,7 +460,8 @@ function openAdd(type = 'tpv', move = null, swapFrom = null) {
   if (form.type !== 'expense' && !move) setTimeout(() => $('#amountInput').focus({ preventScroll: true }), 320);
 }
 $$('[data-add]').forEach(b => b.addEventListener('click', () => { vibrate(8); openAdd(b.dataset.add); }));
-$('#fab').onclick = () => { vibrate(8); openAdd(settings.lastType || 'tpv'); };
+// En la pestaña Stock, el botón + añade un producto; en las demás, un movimiento.
+$('#fab').onclick = () => { vibrate(8); if (state.view === 'stock') openProductForm(); else openAdd(settings.lastType || 'tpv'); };
 $('#typeSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { setType(b.dataset.type); vibrate(5); } });
 $('#areaSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { setArea(b.dataset.v); vibrate(5); } });
 $('#presets').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { $('#amountInput').value = fmtInput(+b.dataset.a); updateSaveLabel(); vibrate(5); } });
@@ -863,11 +869,255 @@ $('#projectCreate').onclick = () => {
 $('#projectInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('#projectCreate').click(); });
 $('#defaultArea').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; settings.area = b.dataset.v; saveSettings(); renderProjects(); });
 
+/* ---------- Stock ---------- */
+const BOX_ICON = '<svg viewBox="0 0 24 24"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>';
+const areaCls = a => AREAS[a] || '';
+const isLow = p => (p.qty || 0) < (p.min || 0);
+const suggestedOrder = p => Math.max(1, 2 * (p.min || 0) - (p.qty || 0));
+const orderQtyOf = p => p.orderQty > 0 ? p.orderQty : suggestedOrder(p);
+const inOrder = p => p.inList || isLow(p);
+const sortByName = (a, b) => a.name.localeCompare(b.name, 'es');
+
+// Fotos: se guardan reducidas en el móvil y se suben a la nube como los justificantes.
+const photoUrls = new Map();
+async function photoUrl(id) {
+  if (!id) return null;
+  if (photoUrls.has(id)) return photoUrls.get(id);
+  let d = await store.get('photos', id).catch(() => null);
+  if (!d && cloud.authed) {
+    try {
+      const r = await fetch('/api/doc?id=' + encodeURIComponent(id), { credentials: 'same-origin' });
+      if (r.ok) { const blob = await r.blob(); d = { id, blob, type: blob.type || 'image/jpeg' }; await store.put('photos', d); }
+    } catch (e) {}
+  }
+  if (!d) return null;
+  const url = URL.createObjectURL(d.blob);
+  photoUrls.set(id, url);
+  return url;
+}
+async function fillPhotos(root) {
+  for (const el of $$('[data-photo]', root)) {
+    const url = await photoUrl(el.dataset.photo);
+    if (url && el.isConnected) el.innerHTML = `<img src="${url}" alt="">`;
+  }
+}
+async function productPhotoBlob(file) {
+  const c = await shrinkImage(file, 1000);
+  const b = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.8));
+  return b || file;
+}
+
+function renderStock() {
+  const q = state.stockQuery.trim().toLowerCase(), f = state.stockFilter;
+  const list = products
+    .filter(p => f === 'all' || (f === 'low' ? isLow(p) : p.area === f || p.area === 'Ambas'))
+    .filter(p => !q || p.name.toLowerCase().includes(q) || (p.supplier || '').toLowerCase().includes(q))
+    .sort(sortByName);
+  $('#stockCount').textContent = products.length === 1 ? '1 producto' : `${products.length} productos`;
+  const grid = $('#stockGrid');
+  if (!list.length) {
+    grid.innerHTML = `<div class="empty">${BOX_ICON}<strong>${products.length ? 'Nada que mostrar' : 'Aún no hay productos'}</strong><p>${products.length ? 'Prueba con otro filtro o búsqueda.' : 'Pulsa el botón + para añadir el primero con su foto.'}</p></div>`;
+    return;
+  }
+  grid.innerHTML = list.map(p => `<button class="s-card" data-product="${esc(p.id)}">
+      <span class="s-img ${areaCls(p.area)}" ${p.photoId ? `data-photo="${esc(p.photoId)}"` : ''}>${BOX_ICON}</span>
+      <span class="s-body"><strong>${esc(p.name)}</strong><span class="s-qty ${isLow(p) ? 'low' : ''}">${p.qty || 0}</span></span>
+    </button>`).join('');
+  fillPhotos(grid);
+}
+function renderOrderDot() { $('#orderDot').hidden = !products.some(inOrder); }
+$('#stockSearch').addEventListener('input', e => { state.stockQuery = e.target.value; renderStock(); });
+$('#stockChips').addEventListener('click', e => {
+  const c = e.target.closest('.chip'); if (!c) return;
+  state.stockFilter = c.dataset.f;
+  $$('#stockChips .chip').forEach(x => x.classList.toggle('on', x === c));
+  renderStock();
+});
+$('#stockGrid').addEventListener('click', e => { const b = e.target.closest('[data-product]'); if (b) openProduct(b.dataset.product); });
+
+// Guarda un producto (siempre como objeto nuevo) y lo marca para subir.
+async function saveProduct(p) {
+  p = { ...p, updatedAt: Date.now() };
+  await store.put('products', p);
+  const i = products.findIndex(x => x.id === p.id);
+  if (i >= 0) products[i] = p; else products.push(p);
+  cloud.mark('stockUp', p.id);
+  return p;
+}
+
+/* Ficha del producto */
+let currentProduct = null;
+function fillProductSheet() {
+  const p = products.find(x => x.id === currentProduct);
+  if (!p) return false;
+  const ph = $('#pPhoto');
+  ph.className = 'p-photo ' + areaCls(p.area);
+  ph.innerHTML = BOX_ICON;
+  if (p.photoId) { ph.dataset.photo = p.photoId; fillPhotos(ph.parentElement); } else delete ph.dataset.photo;
+  $('#pName').textContent = p.name;
+  $('#pMeta').innerHTML = `<span class="tag ${areaCls(p.area)}">${esc(p.area)}</span>${p.supplier ? `<span>Proveedor: ${esc(p.supplier)}</span>` : ''}`;
+  $('#pQty').textContent = p.qty || 0;
+  $('#pQty').classList.toggle('low', isLow(p));
+  $('#pMin').textContent = `Mínimo: ${p.min || 0}`;
+  const b = $('#pList');
+  b.classList.toggle('in', !!p.inList);
+  b.textContent = p.inList ? '✓ En la lista de pedido' : isLow(p) ? 'Bajo mínimo: ya está en la lista' : 'Añadir a la lista de pedido';
+  b.disabled = !p.inList && isLow(p);
+  return true;
+}
+function openProduct(id) { currentProduct = id; if (fillProductSheet()) showSheet('productSheet'); }
+async function changeQty(delta) {
+  const p = products.find(x => x.id === currentProduct); if (!p) return;
+  vibrate(6);
+  await saveProduct({ ...p, qty: Math.max(0, (p.qty || 0) + delta) });
+  fillProductSheet(); render();
+}
+$('#pDec').onclick = () => changeQty(-1);
+$('#pInc').onclick = () => changeQty(1);
+$('#pList').onclick = async () => {
+  const p = products.find(x => x.id === currentProduct); if (!p) return;
+  await saveProduct({ ...p, inList: !p.inList, ordered: false });
+  fillProductSheet(); render();
+  toast(p.inList ? 'Quitado de la lista de pedido' : '✓ Añadido a la lista de pedido');
+};
+$('#pEdit').onclick = () => { const id = currentProduct; swapSheet('productSheet', 'productForm'); fillProductForm(products.find(x => x.id === id)); };
+$('#pDelete').onclick = async () => {
+  const p = products.find(x => x.id === currentProduct); if (!p) return;
+  if (!confirm(`¿Eliminar «${p.name}» del stock?`)) return;
+  await store.del('products', p.id);
+  if (p.photoId) await store.del('photos', p.photoId).catch(() => {});
+  products = products.filter(x => x.id !== p.id);
+  cloud.unmark('stockUp', p.id); cloud.mark('stockDel', p.id);
+  closeTop(); render(); toast('Producto eliminado');
+};
+// Si llegan cambios de otro móvil con una hoja abierta, se refrescan.
+function refreshProductSheets() {
+  if ($('#productSheet').classList.contains('open') && !fillProductSheet()) closeTop();
+  if ($('#orderSheet').classList.contains('open')) renderOrder();
+}
+
+/* Nuevo / editar producto */
+const pform = { id: null, area: 'Podología', photo: null, photoId: null };
+function fillProductForm(p) {
+  pform.id = p?.id || null;
+  pform.area = p?.area || (settings.area === 'Fisioterapia' ? 'Fisioterapia' : 'Podología');
+  pform.photo = null;
+  pform.photoId = p?.photoId || null;
+  $('#pfTitle').textContent = p ? 'Editar producto' : 'Nuevo producto';
+  $('#pfName').value = p?.name || '';
+  $('#pfQty').value = p ? (p.qty || 0) : '';
+  $('#pfMin').value = p ? (p.min || 0) : '';
+  $('#pfSupplier').value = p?.supplier || '';
+  $('#pfError').textContent = '';
+  $('#supplierList').innerHTML = [...new Set(products.map(x => x.supplier).filter(Boolean))].map(x => `<option value="${esc(x)}">`).join('');
+  $$('#pfArea button').forEach(b => b.classList.toggle('on', b.dataset.v === pform.area));
+  showFormPhoto();
+}
+async function showFormPhoto() {
+  const box = $('#pfPhoto');
+  box.querySelector('img')?.remove();
+  let url = null;
+  if (pform.photo) url = URL.createObjectURL(pform.photo);
+  else if (pform.photoId) url = await photoUrl(pform.photoId);
+  box.classList.toggle('has', !!url);
+  box.querySelector('.pf-shot strong').textContent = url ? 'Cambiar foto' : 'Hacer foto del producto';
+  if (url) { const img = document.createElement('img'); img.src = url; img.alt = ''; box.prepend(img); }
+}
+function openProductForm(p) { fillProductForm(p); showSheet('productForm'); setTimeout(() => { if (!p) $('#pfName').focus(); }, 350); }
+$('#pfArea').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  pform.area = b.dataset.v;
+  $$('#pfArea button').forEach(x => x.classList.toggle('on', x === b));
+});
+const onPhoto = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try { pform.photo = await productPhotoBlob(f); } catch (err) { pform.photo = f; }
+  showFormPhoto();
+};
+$('#pfCam').onchange = onPhoto;
+$('#pfFile').onchange = onPhoto;
+const intOf = v => { const n = parseInt(String(v).replace(/\D/g, ''), 10); return Number.isFinite(n) ? n : 0; };
+$('#pfSave').onclick = async () => {
+  const name = $('#pfName').value.trim();
+  if (!name) { $('#pfError').textContent = 'Escribe el nombre del producto'; $('#pfName').focus(); return; }
+  const prev = pform.id ? products.find(x => x.id === pform.id) : null;
+  const p = {
+    ...(prev || { id: uid(), createdAt: Date.now(), inList: false }),
+    name, area: pform.area,
+    qty: intOf($('#pfQty').value), min: intOf($('#pfMin').value),
+    supplier: $('#pfSupplier').value.trim()
+  };
+  if (pform.photo) {
+    const photoId = uid();
+    await store.put('photos', { id: photoId, blob: pform.photo, type: pform.photo.type || 'image/jpeg' });
+    if (prev?.photoId) { await store.del('photos', prev.photoId).catch(() => {}); photoUrls.delete(prev.photoId); }
+    p.photoId = photoId;
+    cloud.mark('photos', photoId);
+  }
+  await saveProduct(p);
+  closeTop(); render();
+  toast(prev ? '✓ Producto actualizado' : '✓ Producto añadido');
+};
+
+/* Lista de pedido */
+function renderOrder() {
+  const list = products.filter(inOrder).sort((a, b) => (a.supplier || '').localeCompare(b.supplier || '', 'es') || sortByName(a, b));
+  $('#orderActions').hidden = !list.length;
+  if (!list.length) {
+    $('#orderList').innerHTML = `<div class="empty">${BOX_ICON}<strong>La lista está vacía</strong><p>Lo que baje del mínimo aparecerá aquí solo. También puedes añadir productos desde su ficha.</p></div>`;
+    return;
+  }
+  $('#orderList').innerHTML = list.map(p => `<div class="o-item ${p.ordered ? 'done' : ''}" data-id="${esc(p.id)}">
+      <button class="o-check" data-act="check" aria-label="${p.ordered ? 'Desmarcar' : 'Marcar como pedido'}">${p.ordered ? '<svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg>' : ''}</button>
+      <span class="o-thumb ${areaCls(p.area)}" ${p.photoId ? `data-photo="${esc(p.photoId)}"` : ''}>${BOX_ICON}</span>
+      <span class="o-info"><strong>${esc(p.name)}</strong><small class="${isLow(p) ? 'low' : ''}">Quedan ${p.qty || 0} · mín. ${p.min || 0}${p.supplier ? ' · ' + esc(p.supplier) : ''}</small></span>
+      <label class="o-qty"><span>Pedir</span><input type="number" inputmode="numeric" min="1" value="${orderQtyOf(p)}" data-act="qty" aria-label="Unidades a pedir"></label>
+      ${p.inList && !isLow(p) ? '<button class="o-remove" data-act="remove" aria-label="Quitar de la lista"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>' : ''}
+    </div>`).join('');
+  fillPhotos($('#orderList'));
+}
+$('#orderBtn').onclick = () => { renderOrder(); showSheet('orderSheet'); };
+$('#orderList').addEventListener('click', async e => {
+  const b = e.target.closest('[data-act]'); if (!b || b.dataset.act === 'qty') return;
+  const p = products.find(x => x.id === b.closest('.o-item').dataset.id); if (!p) return;
+  if (b.dataset.act === 'check') await saveProduct({ ...p, ordered: !p.ordered });
+  if (b.dataset.act === 'remove') await saveProduct({ ...p, inList: false, ordered: false, orderQty: null });
+  renderOrder(); render();
+});
+$('#orderList').addEventListener('change', async e => {
+  if (e.target.dataset.act !== 'qty') return;
+  const p = products.find(x => x.id === e.target.closest('.o-item').dataset.id); if (!p) return;
+  await saveProduct({ ...p, orderQty: Math.max(1, intOf(e.target.value)) });
+});
+$('#orderSend').onclick = async () => {
+  const list = products.filter(inOrder);
+  if (!list.length) return;
+  const groups = {};
+  for (const p of list) (groups[p.supplier || 'Sin proveedor'] ||= []).push(p);
+  const text = `Pedido Clínica FC Salud · ${new Date().toLocaleDateString('es-ES')}\n` +
+    Object.entries(groups).map(([sup, ps]) => `\n${sup}:\n` + ps.sort(sortByName).map(p => `• ${p.name}: ${orderQtyOf(p)} uds`).join('\n')).join('\n');
+  try {
+    if (navigator.share) { await navigator.share({ text }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
+};
+$('#orderArrived').onclick = async () => {
+  const list = products.filter(inOrder);
+  const marked = list.filter(p => p.ordered);
+  const target = marked.length ? marked : list;
+  if (!target.length) return;
+  if (!confirm(`¿Sumar al stock lo pedido de ${target.length} producto${target.length > 1 ? 's' : ''}?\n\n` + target.map(p => `• ${p.name}: +${orderQtyOf(p)}`).join('\n'))) return;
+  for (const p of target) await saveProduct({ ...p, qty: (p.qty || 0) + orderQtyOf(p), inList: false, ordered: false, orderQty: null });
+  renderOrder(); render();
+  toast('✓ Stock actualizado');
+};
+
 /* ---------- Copias de seguridad ---------- */
 const blobToDataURL = b => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); });
 $('#exportBtn').onclick = async () => {
-  const docs = await store.all('docs');
-  const payload = { app: 'FCSALUD', version: 1, exportedAt: new Date().toISOString(), settings, moves, docs: await Promise.all(docs.map(async d => ({ id: d.id, name: d.name, type: d.type, data: await blobToDataURL(d.blob) }))) };
+  const docs = await store.all('docs'), photos = await store.all('photos');
+  const payload = { app: 'FCSALUD', version: 1, exportedAt: new Date().toISOString(), settings, moves, docs: await Promise.all(docs.map(async d => ({ id: d.id, name: d.name, type: d.type, data: await blobToDataURL(d.blob) }))),
+    products, photos: await Promise.all(photos.map(async d => ({ id: d.id, type: d.type, data: await blobToDataURL(d.blob) }))) };
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(payload)], { type: 'application/json' }));
   a.download = `FCSALUD_copia_${todayISO()}.json`; a.click();
@@ -882,9 +1132,11 @@ $('#importInput').onchange = async e => {
     if (!confirm(`¿Importar ${p.moves.length} movimientos? Se añadirán a los que ya tienes.`)) return;
     for (const d of p.docs || []) await store.put('docs', { id: d.id, name: d.name, type: d.type, blob: await (await fetch(d.data)).blob() });
     for (const m of p.moves) { await store.put('moves', m); cloud.mark('up', m.id); if (m.docId && (p.docs || []).some(d => d.id === m.docId)) cloud.mark('docs', m.docId); }
+    for (const d of p.photos || []) await store.put('photos', { id: d.id, type: d.type, blob: await (await fetch(d.data)).blob() });
+    for (const pr of p.products || []) { await store.put('products', pr); cloud.mark('stockUp', pr.id); if (pr.photoId && (p.photos || []).some(d => d.id === pr.photoId)) cloud.mark('photos', pr.photoId); }
     (p.settings?.projects || []).forEach(pr => { if (!settings.projects.includes(pr)) settings.projects.push(pr); });
     saveSettings();
-    moves = await store.all('moves'); render(); toast('✓ Copia importada');
+    moves = await store.all('moves'); products = await store.all('products'); render(); toast('✓ Copia importada');
   } catch (err) { toast('Ese archivo no es una copia de FCSALUD'); }
 };
 $('#wipeBtn').onclick = async () => {
@@ -916,8 +1168,9 @@ async function getDoc(id) {
 const cloud = (() => {
   const KEY = 'fcsalud:pending';
   const VERSION_KEY = 'fcsalud:dataVersion';   // versión de la nube que ya tiene este móvil
+  const STOCK_VERSION_KEY = 'fcsalud:stockVersion';
   const enabled = /^https?:$/.test(location.protocol);
-  let pending = { up: new Set(), del: new Set(), docs: new Set(), docDel: new Set(), projects: new Set() };
+  let pending = { up: new Set(), del: new Set(), docs: new Set(), docDel: new Set(), projects: new Set(), stockUp: new Set(), stockDel: new Set(), photos: new Set() };
   try { const p = JSON.parse(localStorage.getItem(KEY) || '{}'); for (const k in pending) pending[k] = new Set(p[k] || []); } catch (e) {}
   const save = () => {
     try {
@@ -932,8 +1185,8 @@ const cloud = (() => {
   const c = {
     enabled, authed: false,
     get lastSync() { return +(localStorage.getItem('fcsalud:lastSync') || 0); },
-    pendingCount: () => pending.up.size + pending.del.size + pending.docs.size + pending.docDel.size + pending.projects.size,
-    mark(kind, id) { pending[kind].add(id); if (kind === 'up') pending.del.delete(id); save(); c.schedule(); },
+    pendingCount: () => Object.values(pending).reduce((n, v) => n + v.size, 0),
+    mark(kind, id) { pending[kind].add(id); if (kind === 'up') pending.del.delete(id); if (kind === 'stockUp') pending.stockDel.delete(id); save(); c.schedule(); },
     get pendingSince() { return +(localStorage.getItem(SINCE_KEY) || 0); },
     unmark(kind, id) { pending[kind].delete(id); save(); },
     schedule(ms = 2000) { if (!enabled) return; clearTimeout(timer); timer = setTimeout(() => c.syncNow(), ms); ui(); },
@@ -953,6 +1206,7 @@ const cloud = (() => {
       // Primera vez en este dispositivo: se suben los datos que ya tuviera.
       if (!settings.cloudInit) {
         for (const m of moves) { pending.up.add(m.id); if (m.docId) pending.docs.add(m.docId); }
+        for (const p of products) { pending.stockUp.add(p.id); if (p.photoId) pending.photos.add(p.photoId); }
         pending.projects.add('1');
         settings.cloudInit = true; saveSettings(); save();
       }
@@ -973,6 +1227,16 @@ const cloud = (() => {
           if (!r.ok) throw r;
           pending.docs.delete(id); save();
         }
+        for (const id of [...pending.photos]) {
+          const d = await store.get('photos', id);
+          if (!d || !products.some(p => p.photoId === id)) { pending.photos.delete(id); save(); continue; }
+          if (d.blob.size > 4 * 1024 * 1024) { pending.photos.delete(id); save(); continue; }
+          const r = await fetch('/api/doc?id=' + encodeURIComponent(id), { method: 'PUT', body: d.blob, headers: { 'content-type': d.type || 'image/jpeg' }, credentials: 'same-origin' });
+          if (r.status === 401) throw r;
+          if (r.status === 413 || r.status === 415) { pending.photos.delete(id); save(); continue; }
+          if (!r.ok) throw r;
+          pending.photos.delete(id); save();
+        }
         const body = {
           upsert: moves.filter(m => pending.up.has(m.id)),
           delete: [...pending.del], deleteDocs: [...pending.docDel],
@@ -991,8 +1255,21 @@ const cloud = (() => {
         if (body.projects) pending.projects.clear();
         save();
         if (!data.unchanged) await applyServer(data);
-        fullNext = false;
         if (data.updatedAt) localStorage.setItem(VERSION_KEY, String(data.updatedAt));
+        // Stock: mismo método, en su propio archivo.
+        const sbody = { upsert: products.filter(p => pending.stockUp.has(p.id)), delete: [...pending.stockDel] };
+        const r2 = sbody.upsert.length || sbody.delete.length
+          ? await fetch('/api/stock', { method: 'POST', body: JSON.stringify(sbody), headers: { 'content-type': 'application/json' }, credentials: 'same-origin' })
+          : await fetch('/api/stock', { credentials: 'same-origin', cache: 'no-store', headers: { 'x-stock-version': products.length && !fullNext ? localStorage.getItem(STOCK_VERSION_KEY) || '' : '' } });
+        if (r2.status === 401) throw r2;
+        if (!r2.ok) throw r2;
+        const sdata = await r2.json();
+        sbody.upsert.forEach(p => { const cur = products.find(x => x.id === p.id); if (cur === p) pending.stockUp.delete(p.id); });
+        sbody.delete.forEach(id => pending.stockDel.delete(id));
+        save();
+        if (!sdata.unchanged) await applyStock(sdata);
+        if (sdata.updatedAt) localStorage.setItem(STOCK_VERSION_KEY, String(sdata.updatedAt));
+        fullNext = false;
         localStorage.setItem('fcsalud:lastSync', String(Date.now()));
         status = 'ok';
       } catch (e) {
@@ -1008,7 +1285,8 @@ const cloud = (() => {
     },
     async clearLocal() {
       await store.clear('moves'); await store.clear('docs'); moves = [];
-      localStorage.removeItem(SINCE_KEY);
+      await store.clear('products'); await store.clear('photos'); products = [];
+      localStorage.removeItem(SINCE_KEY); localStorage.removeItem(STOCK_VERSION_KEY);
       for (const k in pending) pending[k].clear();
       save();
       localStorage.removeItem(VERSION_KEY);
@@ -1044,6 +1322,34 @@ const cloud = (() => {
     (data.projects || []).forEach(p => { if (!settings.projects.includes(p)) { settings.projects.push(p); projChanged = true; } });
     if (projChanged) saveSettings();
     render();
+  }
+  // Igual que con los movimientos: un producto de este móvil solo se quita si la nube
+  // lo marca como borrado; si no está en la nube, se conserva y se vuelve a subir.
+  async function applyStock(data) {
+    const server = new Map((data.products || []).map(p => [p.id, p]));
+    const local = new Map(products.map(p => [p.id, p]));
+    const deleted = data.deleted || {};
+    const next = [];
+    for (const [id, p] of server) {
+      if (pending.stockDel.has(id)) continue;
+      const l = local.get(id);
+      next.push(l && pending.stockUp.has(id) && (l.updatedAt || 0) >= (p.updatedAt || 0) ? l : p);
+    }
+    let reupload = 0;
+    for (const [id, l] of local) {
+      if (server.has(id)) continue;
+      if (pending.stockUp.has(id)) { next.push(l); continue; }
+      if (deleted[id] && deleted[id] >= (l.updatedAt || 0)) continue;
+      next.push(l); pending.stockUp.add(id); if (l.photoId) pending.photos.add(l.photoId); reupload++;
+    }
+    if (reupload) { save(); c.schedule(500); }
+    const keep = new Set(next.map(p => p.id));
+    for (const p of products) if (!keep.has(p.id)) { await store.del('products', p.id); if (p.photoId) await store.del('photos', p.photoId).catch(() => {}); }
+    const changed = next.filter(p => local.get(p.id) !== p);
+    if (changed.length) await store.putMany('products', changed);
+    products = next;
+    render();
+    refreshProductSheets();
   }
   function ui() {
     const b = $('#syncBtn'), n = c.pendingCount();
@@ -1098,6 +1404,7 @@ $('#loginForm').addEventListener('submit', async e => {
   finally { btn.disabled = false; btn.textContent = 'Entrar'; }
 });
 $('#syncBtn').onclick = () => { go('ajustes'); cloud.syncNow(); };
+$('#settingsBtn').onclick = () => go('ajustes');
 $('#syncWarnBtn').onclick = () => cloud.authed ? cloud.syncNow() : showLogin();
 setInterval(() => { if (cloud.authed && cloud.pendingCount()) cloud.syncNow(); }, 60000);
 $('#syncNowBtn').onclick = () => cloud.authed ? cloud.syncNow() : showLogin();
@@ -1138,6 +1445,7 @@ if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) $(
 (async () => {
   try { await db.open(); } catch (e) { useMemory = true; }
   try { moves = await store.all('moves'); } catch (e) { moves = []; }
+  try { products = await store.all('products'); } catch (e) { products = []; }
   try { await purgeOldDocs(); } catch (e) {}
   if (!settings.projects.includes(settings.project)) settings.project = settings.projects[0];
   render();

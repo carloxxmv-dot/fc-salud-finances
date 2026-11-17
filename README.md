@@ -10,7 +10,8 @@ App web instalable para el control diario de la Clínica FC Salud, creada a part
 - **Resumen**: TPV y efectivo de Podología y Fisioterapia, total cobrado, reparto por área, ranking de patologías (por sesiones o por ingresos, del mes o del año), gráfico día a día e **informe mensual para la asesoría** (descargar o enviar).
 - **Informe mensual (PDF)**: cuadros de resumen, listado solo de gastos y, a continuación, las facturas subidas ese mes (imágenes y PDF).
 - **Justificantes**: se borran solos del móvil a los 4 meses de subirlos.
-- **Ajustes**: proyectos, área preseleccionada, copia de seguridad (exportar/importar con justificantes) y borrado de datos.
+- **Stock**: productos con foto, unidades y mínimo. Si un producto baja del mínimo su número sale en rojo y entra solo en la **lista de pedido**; desde la ficha se puede añadir cualquier otro. La lista se envía por WhatsApp o email agrupada por proveedor, y «Ha llegado el pedido» suma las unidades al stock.
+- **Ajustes** (icono de arriba): proyectos, área preseleccionada, copia de seguridad (exportar/importar con justificantes) y borrado de datos.
 - Editar, eliminar con "Deshacer", cerrar hojas deslizando hacia abajo o con el botón Atrás de Android.
 
 ## Datos
@@ -19,6 +20,7 @@ Todo (movimientos, proyectos y facturas) se guarda en un almacén **privado de V
 - Variables de entorno en Vercel: `APP_PASSWORD` (contraseña inicial), `SESSION_SECRET` (firma de la sesión) y `BLOB_READ_WRITE_TOKEN` (la crea Vercel al conectar el almacén).
 - La contraseña se puede cambiar desde Ajustes; entonces se guarda cifrada (scrypt) en `config/auth.json` y `APP_PASSWORD` deja de usarse.
 - Funciones en `/api`: `login`, `password`, `data` y `doc` (facturas en `docs/{id}`, máx. 4 MB). Las fotos se comprimen en el móvil antes de subirlas.
+- El stock va aparte, en `data/stock.json` (`/api/stock`), con las mismas reglas: cada producto gana por `updatedAt`, los borrados quedan anotados y hay copia semanal en `backups/stock-*.json`. Las fotos de los productos van en `docs/` como los justificantes.
 - Los movimientos se reparten por año (`data/moves/2026.json`…) y `data/meta.json` guarda la lista de años, los borrados, los proyectos y la versión. El antiguo `data/fcsalud.json` se pasa solo a este formato la primera vez y se conserva como copia.
 - Cada escritura comprueba la versión (ETag) del archivo: si dos móviles guardan a la vez, el segundo vuelve a leer y aplica sus cambios, así no se pierde ninguno.
 - Si el móvil ya tiene la última versión, la sincronización solo lee `meta.json` (menos operaciones del plan gratuito).
