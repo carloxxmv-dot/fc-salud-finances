@@ -30,6 +30,7 @@
     <button class="sync-btn" id="syncBtn" aria-label="Estado de la nube" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.6 9.1 4.7 4.7 0 0 0 7 18.5z"/></svg><i></i>
     </button>
+    <button class="icon-btn" id="settingsBtn" aria-label="Ajustes"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></svg></button>
     <button class="icon-btn" id="installBtn" hidden aria-label="Instalar app">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg>
     </button>
@@ -170,6 +171,22 @@
       </div>
     </section>
 
+    <!-- STOCK -->
+    <section class="view" id="view-stock" aria-label="Stock">
+      <div class="stock-head">
+        <div><h1 class="page-title">Stock</h1><p class="muted" id="stockCount"></p></div>
+        <button class="icon-btn" id="orderBtn" aria-label="Lista de pedido"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/></svg><i class="order-dot" id="orderDot" hidden></i></button>
+      </div>
+      <label class="search"><svg viewBox="0 0 24 24" width="18" height="18"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg><input id="stockSearch" placeholder="Buscar producto" aria-label="Buscar producto" autocomplete="off"></label>
+      <div class="chips" id="stockChips">
+        <button class="chip on" data-f="all">Todos</button>
+        <button class="chip c-podo" data-f="Podología">Podología</button>
+        <button class="chip c-physio" data-f="Fisioterapia">Fisioterapia</button>
+        <button class="chip c-expense" data-f="low">Bajo mínimo</button>
+      </div>
+      <div class="stock-grid" id="stockGrid"></div>
+    </section>
+
     <!-- AJUSTES -->
     <section class="view" id="view-ajustes" aria-label="Ajustes">
       <h1 class="page-title">Ajustes</h1>
@@ -229,7 +246,7 @@
     <button class="tab" data-view="historial"><svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h9"/></svg><span>Historial</span></button>
     <button class="fab" id="fab" aria-label="Nuevo movimiento"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
     <button class="tab" data-view="resumen"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg><span>Resumen</span></button>
-    <button class="tab" data-view="ajustes"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></svg><span>Ajustes</span></button>
+    <button class="tab" data-view="stock"><svg viewBox="0 0 24 24"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg><span>Stock</span></button>
   </nav>
 
   <!-- HOJA: NUEVO / EDITAR MOVIMIENTO -->
@@ -312,6 +329,80 @@
       <div class="btn-row">
         <button class="btn btn-soft" id="detEdit">Editar</button>
         <button class="btn btn-danger-soft" id="detDelete">Eliminar</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- HOJA: FICHA DE PRODUCTO -->
+  <div class="sheet-wrap" id="productSheet" aria-hidden="true">
+    <div class="scrim" data-close></div>
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="pName">
+      <div class="grabber"></div>
+      <div class="p-photo" id="pPhoto"></div>
+      <h2 class="p-name" id="pName"></h2>
+      <p class="p-meta" id="pMeta"></p>
+      <div class="p-units">
+        <div><span>Unidades que quedan</span><strong id="pQty">0</strong><small id="pMin"></small></div>
+        <button class="p-step" id="pDec" aria-label="Quitar una unidad">−</button>
+        <button class="p-step" id="pInc" aria-label="Añadir una unidad">+</button>
+      </div>
+      <button class="btn btn-block btn-lg" id="pList"></button>
+      <div class="btn-row">
+        <button class="btn btn-soft" id="pEdit">Editar</button>
+        <button class="btn btn-danger-soft" id="pDelete">Eliminar</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- HOJA: NUEVO / EDITAR PRODUCTO -->
+  <div class="sheet-wrap" id="productForm" aria-hidden="true">
+    <div class="scrim" data-close></div>
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="pfTitle">
+      <div class="grabber"></div>
+      <header class="sheet-head">
+        <h2 id="pfTitle">Nuevo producto</h2>
+        <button class="icon-btn" data-close aria-label="Cerrar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </header>
+      <div class="pf-photo" id="pfPhoto">
+        <label class="pf-shot">
+          <svg viewBox="0 0 24 24"><path d="M4 8h3l1.5-2.5h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg>
+          <strong>Hacer foto del producto</strong>
+          <input type="file" accept="image/*" capture="environment" id="pfCam" hidden>
+        </label>
+        <label class="pf-gallery">o elegirla de la galería<input type="file" accept="image/*" id="pfFile" hidden></label>
+      </div>
+      <label class="field"><span>Nombre</span><input id="pfName" placeholder="Ej. Hojas de bisturí nº 15" autocomplete="off" maxlength="80"></label>
+      <div class="field"><span>Área</span>
+        <div class="segmented seg3" id="pfArea">
+          <button data-v="Podología" class="seg-podo">Podología</button>
+          <button data-v="Fisioterapia" class="seg-physio">Fisioterapia</button>
+          <button data-v="Ambas" class="seg-any">Ambas</button>
+        </div>
+      </div>
+      <div class="pf-nums">
+        <label class="field"><span>Unidades que hay</span><input id="pfQty" type="number" inputmode="numeric" min="0" step="1" placeholder="0"></label>
+        <label class="field"><span>Avisar por debajo de</span><input id="pfMin" type="number" inputmode="numeric" min="0" step="1" placeholder="0"></label>
+      </div>
+      <label class="field"><span>Proveedor (opcional)</span><input id="pfSupplier" placeholder="Ej. tu distribuidor habitual" autocomplete="off" maxlength="80" list="supplierList"></label>
+      <datalist id="supplierList"></datalist>
+      <p class="form-error" id="pfError" role="alert"></p>
+      <button class="btn btn-primary btn-block btn-lg" id="pfSave">Guardar producto</button>
+    </section>
+  </div>
+
+  <!-- HOJA: LISTA DE PEDIDO -->
+  <div class="sheet-wrap" id="orderSheet" aria-hidden="true">
+    <div class="scrim" data-close></div>
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="orderTitle">
+      <div class="grabber"></div>
+      <header class="sheet-head">
+        <div><h2 id="orderTitle">Lista de pedido</h2><p class="muted" style="margin:2px 0 0">Lo que está bajo mínimo entra solo</p></div>
+        <button class="icon-btn" data-close aria-label="Cerrar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </header>
+      <div class="order-list" id="orderList"></div>
+      <div class="order-actions" id="orderActions">
+        <button class="btn btn-primary btn-block btn-lg" id="orderSend">Enviar pedido</button>
+        <button class="btn btn-soft btn-block" id="orderArrived">Ha llegado el pedido · sumar al stock</button>
       </div>
     </section>
   </div>
