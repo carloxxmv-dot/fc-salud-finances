@@ -10,7 +10,7 @@ App web instalable para el control diario de la Clínica FC Salud, creada a part
 - **Resumen**: TPV y efectivo de Podología y Fisioterapia, total cobrado, reparto por área, ranking de patologías (por sesiones o por ingresos, del mes o del año), gráfico día a día e **informe mensual para la asesoría** (descargar o enviar).
 - **Informe mensual (PDF)**: cuadros de resumen, listado solo de gastos y, a continuación, las facturas subidas ese mes (imágenes y PDF).
 - **Justificantes**: se borran solos del móvil a los 4 meses de subirlos.
-- **Stock**: productos con foto, unidades y mínimo. Si un producto baja del mínimo su número sale en rojo y entra solo en la **lista de pedido**; desde la ficha se puede añadir cualquier otro. La lista se envía por WhatsApp o email agrupada por proveedor, y «Ha llegado el pedido» suma las unidades al stock.
+- **Stock**: productos con foto (se encuadra en cuadrado al subirla y se puede reajustar al editar), unidades y mínimo. Si un producto baja del mínimo su número sale en rojo y entra solo en la **lista de pedido**; desde la ficha se puede añadir cualquier otro. La lista se envía por WhatsApp o email agrupada por proveedor, y «Ha llegado el pedido» suma las unidades al stock.
 - **Ajustes** (icono de arriba): proyectos, área preseleccionada, copia de seguridad (exportar/importar con justificantes) y borrado de datos.
 - Editar, eliminar con "Deshacer", cerrar hojas deslizando hacia abajo o con el botón Atrás de Android.
 

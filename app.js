@@ -907,6 +907,84 @@ async function productPhotoBlob(file) {
   return b || file;
 }
 
+/* Encuadre: la foto se recorta en cuadrado antes de guardarla, para que todas se vean igual. */
+const cropper = (() => {
+  const box = $('#cropper'), stage = $('#cropStage'), cv = $('#cropImg'), frame = $('.crop-frame', box), zoomIn = $('#cropZoom');
+  let src = null, F = 0, fx = 0, fy = 0, base = 1, zoom = 1, tx = 0, ty = 0, done = null;
+  const pts = new Map();
+  let last = null;
+  const scale = () => base * zoom;
+  function clamp() {
+    const s = scale();
+    tx = Math.min(fx, Math.max(fx + F - src.width * s, tx));
+    ty = Math.min(fy, Math.max(fy + F - src.height * s, ty));
+  }
+  function paint() { clamp(); cv.style.transform = `translate(${tx}px,${ty}px) scale(${scale()})`; zoomIn.value = zoom; }
+  function layout() {
+    const W = stage.clientWidth, H = stage.clientHeight;
+    F = Math.max(160, Math.min(W, H) - 24); fx = (W - F) / 2; fy = (H - F) / 2;
+    Object.assign(frame.style, { left: fx + 'px', top: fy + 'px', width: F + 'px', height: F + 'px' });
+    base = F / Math.min(src.width, src.height); zoom = 1;
+    tx = fx + (F - src.width * base) / 2; ty = fy + (F - src.height * base) / 2;
+    paint();
+  }
+  function setSource(c) {
+    src = c; cv.width = c.width; cv.height = c.height;
+    cv.style.width = c.width + 'px'; cv.style.height = c.height + 'px';
+    cv.getContext('2d').drawImage(c, 0, 0);
+    layout();
+  }
+  function zoomAt(z, px, py) {
+    const s1 = scale(); zoom = Math.min(4, Math.max(1, z)); const s2 = scale();
+    tx = px - (px - tx) * s2 / s1; ty = py - (py - ty) * s2 / s1; paint();
+  }
+  const local = e => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  function gesture() {
+    const v = [...pts.values()];
+    if (v.length === 1) return { x: v[0].x, y: v[0].y, d: 0 };
+    return { x: (v[0].x + v[1].x) / 2, y: (v[0].y + v[1].y) / 2, d: Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y) };
+  }
+  stage.addEventListener('pointerdown', e => { stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, local(e)); last = gesture(); });
+  stage.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId) || !src) return;
+    pts.set(e.pointerId, local(e));
+    const g = gesture();
+    if (last && pts.size >= 2 && last.d && g.d) zoomAt(zoom * g.d / last.d, g.x, g.y);
+    if (last) { tx += g.x - last.x; ty += g.y - last.y; paint(); }
+    last = g;
+  });
+  const up = e => { pts.delete(e.pointerId); last = pts.size ? gesture() : null; };
+  stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+  stage.addEventListener('wheel', e => { e.preventDefault(); const p = local(e); zoomAt(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1), p.x, p.y); }, { passive: false });
+  zoomIn.addEventListener('input', () => zoomAt(+zoomIn.value, fx + F / 2, fy + F / 2));
+  $('#cropRotate').onclick = () => {
+    const c = document.createElement('canvas'); c.width = src.height; c.height = src.width;
+    const x = c.getContext('2d'); x.translate(c.width, 0); x.rotate(Math.PI / 2); x.drawImage(src, 0, 0);
+    setSource(c);
+  };
+  window.addEventListener('resize', () => { if (!box.hidden && src) layout(); });
+  function finish(v) { const d = done; done = null; if (d) d(v); }
+  $('#cropCancel').onclick = () => closeTop();
+  $('#cropOk').onclick = async () => {
+    const s = scale(), sw = F / s, size = Math.round(Math.min(1000, Math.max(400, sw)));
+    const out = document.createElement('canvas'); out.width = out.height = size;
+    const x = out.getContext('2d'); x.imageSmoothingQuality = 'high';
+    x.drawImage(src, (fx - tx) / s, (fy - ty) / s, sw, sw, 0, 0, size, size);
+    const b = await new Promise(ok => out.toBlob(ok, 'image/jpeg', 0.85));
+    finish(b); closeTop();
+  };
+  // Abre el encuadre y devuelve la foto recortada, o null si se cancela.
+  return async function cropPhoto(file) {
+    const c = await shrinkImage(file, 2000);
+    box.hidden = false; pts.clear(); last = null;
+    setSource(c);
+    return new Promise(ok => {
+      done = ok;
+      openLayer(box, () => { box.hidden = true; src = null; finish(null); });
+    });
+  };
+})();
+
 function renderStock() {
   const q = state.stockQuery.trim().toLowerCase(), f = state.stockFilter;
   const list = products
@@ -951,7 +1029,7 @@ function fillProductSheet() {
   const p = products.find(x => x.id === currentProduct);
   if (!p) return false;
   const ph = $('#pPhoto');
-  ph.className = 'p-photo ' + areaCls(p.area);
+  ph.className = 'p-photo ' + areaCls(p.area) + (p.photoId ? '' : ' none');
   ph.innerHTML = BOX_ICON;
   if (p.photoId) { ph.dataset.photo = p.photoId; fillPhotos(ph.parentElement); } else delete ph.dataset.photo;
   $('#pName').textContent = p.name;
@@ -965,6 +1043,12 @@ function fillProductSheet() {
   b.disabled = !p.inList && isLow(p);
   return true;
 }
+$('#pPhoto').addEventListener('click', async e => {
+  const p = products.find(x => x.id === currentProduct);
+  if (!p?.photoId || !e.target.closest('img')) return;
+  const d = await store.get('photos', p.photoId).catch(() => null);
+  if (d) openViewer({ ...d, type: d.type || 'image/jpeg', name: p.name + '.jpg' });
+});
 function openProduct(id) { currentProduct = id; if (fillProductSheet()) showSheet('productSheet'); }
 async function changeQty(delta) {
   const p = products.find(x => x.id === currentProduct); if (!p) return;
@@ -1013,14 +1097,18 @@ function fillProductForm(p) {
   $$('#pfArea button').forEach(b => b.classList.toggle('on', b.dataset.v === pform.area));
   showFormPhoto();
 }
+let formPhotoUrl = null;
 async function showFormPhoto() {
   const box = $('#pfPhoto');
   box.querySelector('img')?.remove();
+  if (formPhotoUrl) { URL.revokeObjectURL(formPhotoUrl); formPhotoUrl = null; }
   let url = null;
-  if (pform.photo) url = URL.createObjectURL(pform.photo);
+  if (pform.photo) url = formPhotoUrl = URL.createObjectURL(pform.photo);
   else if (pform.photoId) url = await photoUrl(pform.photoId);
   box.classList.toggle('has', !!url);
-  box.querySelector('.pf-shot strong').textContent = url ? 'Cambiar foto' : 'Hacer foto del producto';
+  $('#pfCrop').hidden = !url;
+  box.querySelector('.pf-shot strong').textContent = url ? 'Hacer otra foto' : 'Hacer foto del producto';
+  box.querySelector('.pf-gallery').firstChild.textContent = url ? 'Elegir de la galería' : 'o elegirla de la galería';
   if (url) { const img = document.createElement('img'); img.src = url; img.alt = ''; box.prepend(img); }
 }
 function openProductForm(p) { fillProductForm(p); showSheet('productForm'); setTimeout(() => { if (!p) $('#pfName').focus(); }, 350); }
@@ -1031,8 +1119,18 @@ $('#pfArea').addEventListener('click', e => {
 });
 const onPhoto = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
-  try { pform.photo = await productPhotoBlob(f); } catch (err) { pform.photo = f; }
-  showFormPhoto();
+  let b = null;
+  try { b = await cropper(f); }
+  catch (err) { try { b = await productPhotoBlob(f); } catch (e2) { b = f; } }
+  if (!b) return;
+  pform.photo = b; showFormPhoto();
+};
+$('#pfCrop').onclick = async () => {
+  let blob = pform.photo;
+  if (!blob && pform.photoId) blob = (await store.get('photos', pform.photoId).catch(() => null))?.blob;
+  if (!blob) { toast('La foto aún no se ha descargado'); return; }
+  try { const b = await cropper(blob); if (b) { pform.photo = b; showFormPhoto(); } }
+  catch (err) { toast('No se pudo abrir la foto'); }
 };
 $('#pfCam').onchange = onPhoto;
 $('#pfFile').onchange = onPhoto;
