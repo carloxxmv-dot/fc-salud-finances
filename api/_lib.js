@@ -2,6 +2,10 @@
 import crypto from 'node:crypto';
 
 const COOKIE = 'fcs_session';
+// Desde el 20/11/2026 Control diario está dentro de la web (plugin FC Salud Reservas).
+// La app queda en solo lectura: se siguen aceptando los cambios que estaban pendientes en algún móvil,
+// pero ya no se borra ningún justificante ni foto, para que la web pueda copiarlo todo.
+export const SOLO_LECTURA = true;
 const SESSION_DAYS = 180;
 const secret = () => process.env.SESSION_SECRET || process.env.BLOB_READ_WRITE_TOKEN || 'dev-secret';
 

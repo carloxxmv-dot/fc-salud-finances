@@ -440,6 +440,7 @@ function showDoc(doc) {
   }
 }
 function openAdd(type = 'tpv', move = null, swapFrom = null) {
+  if (soloLectura()) return;
   $('#formError').textContent = '';
   form.id = move ? move.id : null;
   form.doc = null; form.docId = move?.docId || null; form.removeDoc = false;
@@ -474,6 +475,7 @@ $('#docThumb').onclick = () => {
 };
 
 async function saveMove() {
+  if (soloLectura()) return;
   const amount = parseAmount($('#amountInput').value);
   const party = $('#partyInput').value.trim();
   if (form.type === 'expense' && !party) { $('#formError').textContent = 'Indica el proveedor o servicio'; $('#partyInput').focus(); return; }
@@ -1028,6 +1030,7 @@ $('#stockGrid').addEventListener('click', e => { const b = e.target.closest('[da
 
 // Guarda un producto (siempre como objeto nuevo) y lo marca para subir.
 async function saveProduct(p) {
+  if (soloLectura()) return p;
   p = { ...p, updatedAt: Date.now() };
   await store.put('products', p);
   const i = products.findIndex(x => x.id === p.id);
@@ -1072,6 +1075,7 @@ $('#pPhoto').addEventListener('click', async e => {
 });
 function openProduct(id) { currentProduct = id; if (fillProductSheet()) showSheet('productSheet'); }
 async function changeQty(delta) {
+  if (soloLectura()) return;
   const p = products.find(x => x.id === currentProduct); if (!p) return;
   vibrate(6);
   await saveProduct({ ...p, qty: Math.max(0, (p.qty || 0) + delta) });
@@ -1599,12 +1603,23 @@ const doInstall = async () => { if (!installEvt) return; installEvt.prompt(); aw
 $('#installBtn').onclick = doInstall; $('#installBtn2').onclick = doInstall;
 if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) $('#installCard').hidden = true;
 
+/* ---------- Solo lectura (desde el 20/11/2026 todo se apunta en la web) ---------- */
+const SOLO_LECTURA = true;
+const URL_WEB = 'https://clinicafcsalud.com/gestion/';
+const soloLectura = () => { if (!SOLO_LECTURA) return false; toast('Control diario ya no se usa: apunta los cobros en la app de la clínica'); return true; };
+if (SOLO_LECTURA) {
+  document.body.classList.add('solo-lectura');
+  const b = document.createElement('div'); b.className = 'ro-banner';
+  b.innerHTML = '<b>Control diario ya está dentro de la web de la clínica</b><span>Esta app queda solo para consultar. Los cobros, gastos y stock se apuntan en la app de citas.</span><a href="' + URL_WEB + '">Abrir la app de la clínica</a>';
+  document.body.prepend(b);
+}
+
 /* ---------- Inicio ---------- */
 (async () => {
   try { await db.open(); } catch (e) { useMemory = true; }
   try { moves = await store.all('moves'); } catch (e) { moves = []; }
   try { products = await store.all('products'); } catch (e) { products = []; }
-  try { await purgeOldDocs(); } catch (e) {}
+  if (!SOLO_LECTURA) { try { await purgeOldDocs(); } catch (e) {} }
   if (!settings.projects.includes(settings.project)) settings.project = settings.projects[0];
   render();
   cloud.start();
