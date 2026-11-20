@@ -1,4 +1,4 @@
-import { readJSON, readJSONVersioned, writeJSONIf, writeJSON, removeFile, Conflict, isAuthed, json, unauthorized, wait } from './_lib.js';
+import { SOLO_LECTURA, readJSON, readJSONVersioned, writeJSONIf, writeJSON, removeFile, Conflict, isAuthed, json, unauthorized, wait } from './_lib.js';
 
 // Los movimientos se guardan repartidos por año para que cada archivo siga siendo pequeño:
 //   data/meta.json        { years: ['2025', ...], deleted: { id: fecha }, projects: [...], updatedAt, lastBackup, backups: [...] }
@@ -23,7 +23,7 @@ export async function GET(request) {
   const known = request.headers.get('x-data-version');
   if (known && meta.value.updatedAt && known === String(meta.value.updatedAt)) return json({ unchanged: true, updatedAt: meta.value.updatedAt });
   const years = await loadYears(meta.value.years);
-  return json(publicData(meta.value, years));
+  return json({ ...publicData(meta.value, years), soloLectura: SOLO_LECTURA });
 }
 
 // Aplica cambios: { upsert: [move], delete: [id], deleteDocs: [id], projects: [...] } y devuelve el estado completo.
@@ -36,7 +36,7 @@ export async function POST(request) {
       // Si tras varios intentos sigue habiendo conflicto, el último guarda sin comprobar versión
       // (como antes de usar ETag): los cambios ya están mezclados con lo último leído.
       const { data, docsToRemove } = await applyChanges(body, attempt >= 4);
-      for (const id of new Set(docsToRemove)) if (/^[a-z0-9]+$/i.test(id)) await removeFile(`docs/${id}`).catch(() => {});
+      if (!SOLO_LECTURA) for (const id of new Set(docsToRemove)) if (/^[a-z0-9]+$/i.test(id)) await removeFile(`docs/${id}`).catch(() => {});
       return json(data);
     } catch (e) {
       if (!(e instanceof Conflict) || attempt >= 4) throw e;

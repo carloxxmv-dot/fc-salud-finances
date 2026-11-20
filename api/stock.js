@@ -1,4 +1,4 @@
-import { readJSONVersioned, writeJSONIf, writeJSON, removeFile, Conflict, isAuthed, json, unauthorized, wait } from './_lib.js';
+import { SOLO_LECTURA, readJSONVersioned, writeJSONIf, writeJSON, removeFile, Conflict, isAuthed, json, unauthorized, wait } from './_lib.js';
 
 // Stock de productos, en un archivo aparte de los movimientos:
 //   data/stock.json  { products: [...], deleted: { id: fecha }, updatedAt, lastBackup }
@@ -26,7 +26,7 @@ export async function POST(request) {
   for (let attempt = 0; ; attempt++) {
     try {
       const { data, photosToRemove } = await applyChanges(body, attempt >= 4);
-      for (const id of new Set(photosToRemove)) if (/^[a-z0-9]+$/i.test(id)) await removeFile(`docs/${id}`).catch(() => {});
+      if (!SOLO_LECTURA) for (const id of new Set(photosToRemove)) if (/^[a-z0-9]+$/i.test(id)) await removeFile(`docs/${id}`).catch(() => {});
       return json(data);
     } catch (e) {
       if (!(e instanceof Conflict) || attempt >= 4) throw e;

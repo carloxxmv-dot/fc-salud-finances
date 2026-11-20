@@ -1,4 +1,4 @@
-import { readFileMeta, writeFile, removeFile, isAuthed, json, unauthorized } from './_lib.js';
+import { SOLO_LECTURA, readFileMeta, writeFile, removeFile, isAuthed, json, unauthorized } from './_lib.js';
 
 // Justificantes (fotos y PDF) en el almacén privado: /api/doc?id=...
 const MAX = 4 * 1024 * 1024;
@@ -30,6 +30,6 @@ export async function PUT(request) {
 export async function DELETE(request) {
   if (!isAuthed(request)) return unauthorized();
   const id = docId(request); if (!id) return json({ error: 'id' }, 400);
-  await removeFile(`docs/${id}`).catch(() => {});
+  if (!SOLO_LECTURA) await removeFile(`docs/${id}`).catch(() => {});
   return json({ ok: true });
 }
